@@ -1,0 +1,30 @@
+{
+  "name": "iiko-shift-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for shift management with iiko Cloud integration",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "sync-iiko": "node scripts/syncIikoIds.js",
+    "init-schedule": "node scripts/initScheduleSheet.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "iiko",
+    "shift-management"
+  ],
+  "author": "LVMN",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "googleapis": "^170.0.0",
+    "node-cron": "^4.2.1",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
