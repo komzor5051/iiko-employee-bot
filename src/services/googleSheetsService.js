@@ -451,6 +451,28 @@ class GoogleSheetsService {
       total_payment: totalPayment
     };
   }
+
+  /**
+   * Получить все закрытые смены за сегодня
+   * @returns {Array} - Массив смен с данными
+   */
+  async getTodayShiftLogs() {
+    const rows = await this.getSheetData('Shift Logs!A2:H1000');
+    const today = new Date().toLocaleDateString('ru-RU'); // ДД.ММ.ГГГГ
+
+    return rows
+      .filter(row => row[0] === today && row[4]) // Только сегодняшние и закрытые смены
+      .map(row => ({
+        date: row[0],
+        phone: row[1],
+        full_name: row[2],
+        start_time: row[3],
+        end_time: row[4],
+        hours_worked: parseFloat(row[5]) || 0,
+        hourly_rate: parseFloat(row[6]) || 0,
+        total_payment: parseFloat(row[7]) || 0
+      }));
+  }
 }
 
 module.exports = GoogleSheetsService;

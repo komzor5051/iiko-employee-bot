@@ -12,6 +12,7 @@ class CronService {
   constructor(bot, sheetsService) {
     this.bot = bot;
     this.sheetsService = sheetsService;
+    this.managersGroupId = -5237107467; // ID группы руководителей
   }
 
   /**
@@ -29,6 +30,12 @@ class CronService {
       timezone: 'Asia/Novosibirsk'
     });
     console.log('⏰ Cron: проверка напоминаний каждые 5 минут');
+
+    // Ежедневный отчёт в группу руководителей в 21:00
+    cron.schedule('0 21 * * *', () => this.sendDailyReport(), {
+      timezone: 'Asia/Novosibirsk'
+    });
+    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:00');
   }
 
   /**
@@ -161,6 +168,46 @@ class CronService {
       }
     } catch (error) {
       console.error('❌ Ошибка в sendEndReminders:', error);
+    }
+  }
+
+  /**
+   * Отправить ежедневный отчёт в группу руководителей
+   */
+  async sendDailyReport() {
+    console.log('📊 Формирование ежедневного отчёта...');
+
+    try {
+      const shifts = await this.sheetsService.getTodayShiftLogs();
+      const today = new Date().toLocaleDateString('ru-RU');
+
+      if (shifts.length === 0) {
+        const message = `📊 *Отчёт за ${today}*\n\nСегодня смен не было.`;
+        await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'Markdown' });
+        console.log('✅ Отправлен пустой отчёт (смен не было)');
+        return;
+      }
+
+      // Считаем итоги
+      const totalHours = shifts.reduce((sum, s) => sum + s.hours_worked, 0);
+      const totalPayment = shifts.reduce((sum, s) => sum + s.total_payment, 0);
+
+      // Формируем список сотрудников
+      const employeeLines = shifts.map(s =>
+        `• ${s.full_name}: ${s.start_time}–${s.end_time} (${s.hours_worked.toFixed(1)} ч) — ${s.total_payment.toLocaleString('ru-RU')} ₽`
+      ).join('\n');
+
+      const message =
+        `📊 *Отчёт за ${today}*\n\n` +
+        `👥 *Сотрудники:*\n${employeeLines}\n\n` +
+        `━━━━━━━━━━━━━━━\n` +
+        `⏱ *Всего часов:* ${totalHours.toFixed(1)} ч\n` +
+        `💰 *К выплате:* ${totalPayment.toLocaleString('ru-RU')} ₽`;
+
+      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'Markdown' });
+      console.log(`✅ Ежедневный отчёт отправлен. Смен: ${shifts.length}, часов: ${totalHours.toFixed(1)}, сумма: ${totalPayment}₽`);
+    } catch (error) {
+      console.error('❌ Ошибка отправки ежедневного отчёта:', error);
     }
   }
 }
