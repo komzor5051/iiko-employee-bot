@@ -486,7 +486,8 @@ class GoogleSheetsService {
    */
   async getTodayShiftLogs() {
     const rows = await this.getSheetData('Shift Logs!A2:H1000');
-    const today = new Date().toLocaleDateString('ru-RU'); // ДД.ММ.ГГГГ
+    // Используем Asia/Novosibirsk для правильной даты на сервере
+    const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' }); // ДД.ММ.ГГГГ
 
     return rows
       .filter(row => row[0] === today && row[4]) // Только сегодняшние и закрытые смены

@@ -179,7 +179,7 @@ class CronService {
 
     try {
       const shifts = await this.sheetsService.getTodayShiftLogs();
-      const today = new Date().toLocaleDateString('ru-RU');
+      const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
       if (shifts.length === 0) {
         const message = `📊 *Отчёт за ${today}*\n\nСегодня смен не было.`;
