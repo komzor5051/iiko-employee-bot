@@ -31,11 +31,11 @@ class CronService {
     });
     console.log('⏰ Cron: проверка напоминаний каждые 5 минут');
 
-    // Ежедневный отчёт в группу руководителей в 21:00
-    cron.schedule('0 21 * * *', () => this.sendDailyReport(), {
+    // Ежедневный отчёт в группу руководителей в 21:30
+    cron.schedule('30 21 * * *', () => this.sendDailyReport(), {
       timezone: 'Asia/Novosibirsk'
     });
-    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:00');
+    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:30');
 
     // Проверка проблем каждые 15 минут (эскалация)
     cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate(), {
