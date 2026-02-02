@@ -5,6 +5,8 @@ const GoogleSheetsService = require('./services/googleSheetsService');
 const IikoService = require('./services/iikoService');
 const locationService = require('./services/locationService');
 const CronService = require('./services/cronService');
+const WebhookServer = require('./services/webhookServer');
+const WebhookHandler = require('./services/webhookHandler');
 
 console.log('🚀 Запуск бота...');
 console.log(`Environment: ${config.nodeEnv}`);
@@ -620,17 +622,25 @@ bot.action('back_to_menu', async (ctx) => {
 
 // Graceful shutdown
 process.once('SIGINT', () => {
-  console.log('⚠️ Получен сигнал SIGINT, останавливаем бота...');
+  console.log('⚠️ Получен сигнал SIGINT, останавливаем...');
+  webhookServer.stop();
   bot.stop('SIGINT');
 });
 
 process.once('SIGTERM', () => {
-  console.log('⚠️ Получен сигнал SIGTERM, останавливаем бота...');
+  console.log('⚠️ Получен сигнал SIGTERM, останавливаем...');
+  webhookServer.stop();
   bot.stop('SIGTERM');
 });
 
 // Инициализация и запуск cron-напоминаний
 const cronService = new CronService(bot, sheetsService);
+
+// Инициализация обработчика webhooks
+const webhookHandler = new WebhookHandler(bot, sheetsService);
+
+// Инициализация webhook сервера
+const webhookServer = new WebhookServer((data) => webhookHandler.handle(data));
 
 // Запуск бота
 bot.launch()
@@ -641,6 +651,9 @@ bot.launch()
     // Запуск cron-напоминаний после старта бота
     cronService.start();
     console.log('✅ Cron-напоминания запущены');
+
+    // Запуск webhook сервера
+    webhookServer.start();
   })
   .catch(err => {
     console.error('❌ Ошибка запуска бота:', err);

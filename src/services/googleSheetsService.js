@@ -173,6 +173,34 @@ class GoogleSheetsService {
   }
 
   /**
+   * Найти сотрудника по iiko ID
+   * @param {string} iikoId - iiko ID (UUID)
+   * @returns {Object|null} - Объект сотрудника или null
+   */
+  async findEmployeeByIikoId(iikoId) {
+    const rows = await this.getSheetData('Сотрудники!A2:G1000');
+    const iikoIdStr = String(iikoId);
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row[6] && String(row[6]) === iikoIdStr) {
+        return {
+          phone: row[0],
+          full_name: row[1] || '',
+          username: row[2] || '',
+          position: row[3] || '',
+          hourly_rate: parseFloat(row[4]) || 0,
+          telegram_id: row[5] || null,
+          iiko_id: row[6],
+          rowIndex: i + 2
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Сохранить Telegram ID для сотрудника (колонка F)
    * @param {number} rowIndex - Номер строки в таблице
    * @param {number} telegramId - Telegram ID

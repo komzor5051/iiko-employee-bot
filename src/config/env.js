@@ -50,5 +50,8 @@ module.exports = {
 
   // Environment
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '3000')
+  port: parseInt(process.env.PORT || '3000'),
+
+  // iiko Webhook
+  iikoWebhookToken: process.env.IIKO_WEBHOOK_TOKEN || 'your-secret-token'
 };

@@ -13,6 +13,7 @@ npm install          # Install dependencies
 npm run dev          # Development with nodemon hot reload
 npm start            # Production
 npm run sync-iiko    # Sync iiko employee IDs to Google Sheets
+npm run setup-webhook  # Configure iiko webhook (requires WEBHOOK_URL env)
 pm2 start ecosystem.config.js  # Production with PM2
 ```
 
@@ -25,15 +26,18 @@ src/
 ├── config/env.js               # Environment validation (exits on missing vars)
 ├── services/
 │   ├── googleSheetsService.js  # Google Sheets CRUD for employees and shifts
-│   ├── iikoService.js          # iiko Cloud API with token auto-refresh
+│   ├── iikoService.js          # iiko Cloud API with token auto-refresh + webhook config
 │   ├── cronService.js          # Cron-based shift reminders (evening, 1h before start/end)
-│   └── locationService.js      # (TODO)
+│   ├── webhookServer.js        # HTTP server for receiving iiko webhooks
+│   ├── webhookHandler.js       # Handler for PersonalShift events from iiko
+│   └── locationService.js      # Geolocation check for store proximity
 ├── middleware/
 │   ├── logger.js               # Request logging middleware
 │   └── errorHandler.js         # Global error handler
 └── utils/                      # Constants, messages, keyboards (TODO)
 scripts/
-└── syncIikoIds.js              # One-time script to match employees by name
+├── syncIikoIds.js              # One-time script to match employees by name
+└── setupWebhook.js             # Configure iiko webhook endpoint
 ```
 
 ### Data Flow
@@ -41,6 +45,13 @@ scripts/
 1. User sends `/start` → Bot checks `Сотрудники` sheet by Telegram ID
 2. Unregistered users share phone → Bot matches phone in sheet, saves Telegram ID
 3. Shift operations write to `Shift Logs` sheet and optionally call iiko API
+
+### iiko Webhook Flow (reverse sync)
+
+1. Employee opens/closes shift in iiko terminal
+2. iiko sends POST to `/iiko-webhook` with PersonalShift event
+3. webhookHandler finds employee by iiko_id in Google Sheets
+4. Shift is logged to `Shift Logs` and notification sent to employee via Telegram
 
 ### Google Sheets Structure
 
@@ -67,5 +78,14 @@ Required (validated at startup):
 
 Optional:
 - `IIKO_BASE_URL`, `IIKO_API_LOGIN`, `IIKO_ORGANIZATION_ID`, `IIKO_TERMINAL_GROUP_ID`
+- `IIKO_WEBHOOK_TOKEN` - secret token for webhook auth (iiko sends in Authorization header)
+- `PORT` - HTTP server port for webhooks (default: 3000)
 - `ADMIN_TELEGRAM_IDS` (comma-separated)
 - `NODE_ENV` (default: development)
+
+### Webhook Setup
+
+1. Add `IIKO_WEBHOOK_TOKEN=your-secret-token` to `.env`
+2. Deploy server with public URL (or use ngrok for testing)
+3. Run: `WEBHOOK_URL=https://your-domain.com/iiko-webhook npm run setup-webhook`
+4. Or configure in iikoWeb: Settings → Cloud API → Webhook settings

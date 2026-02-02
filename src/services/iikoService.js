@@ -269,6 +269,86 @@ class IikoService {
       return null;
     }
   }
+
+  // ==================== WEBHOOK МЕТОДЫ ====================
+
+  /**
+   * Получить текущие настройки webhooks
+   * @returns {Object} - Настройки webhooks
+   */
+  async getWebhookSettings() {
+    try {
+      console.log('📋 Получение настроек webhooks...');
+
+      const response = await this.makeRequest(
+        'webhooks/settings',
+        'POST',
+        {
+          organizationId: this.organizationId
+        }
+      );
+
+      console.log('✅ Настройки webhooks получены');
+      return response;
+    } catch (error) {
+      console.error('❌ Ошибка получения настроек webhooks:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Обновить настройки webhooks
+   * @param {string} webhookUrl - URL для получения webhooks
+   * @param {string} authToken - Токен авторизации
+   * @param {Object} filters - Фильтры событий
+   * @returns {Object} - Результат обновления
+   */
+  async updateWebhookSettings(webhookUrl, authToken, filters = {}) {
+    try {
+      console.log(`🔧 Настройка webhooks: ${webhookUrl}`);
+
+      const body = {
+        organizationId: this.organizationId,
+        webhooksUri: webhookUrl,
+        authToken: authToken
+      };
+
+      // Добавляем фильтры событий если указаны
+      // Доступные фильтры:
+      // - deliveryOrderUpdateFilter: фильтр событий заказов доставки
+      // - reserveUpdateFilter: фильтр событий резервов
+      // - tableOrderUpdateFilter: фильтр событий заказов на столик
+      // - stopListUpdateFilter: фильтр событий стоп-листа
+      // - personalShiftFilter: фильтр событий личных смен
+      if (filters.deliveryOrderUpdate !== undefined) {
+        body.deliveryOrderUpdateFilter = filters.deliveryOrderUpdate;
+      }
+      if (filters.reserveUpdate !== undefined) {
+        body.reserveUpdateFilter = filters.reserveUpdate;
+      }
+      if (filters.tableOrderUpdate !== undefined) {
+        body.tableOrderUpdateFilter = filters.tableOrderUpdate;
+      }
+      if (filters.stopListUpdate !== undefined) {
+        body.stopListUpdateFilter = filters.stopListUpdate;
+      }
+      if (filters.personalShift !== undefined) {
+        body.personalShiftFilter = filters.personalShift;
+      }
+
+      const response = await this.makeRequest(
+        'webhooks/update_settings',
+        'POST',
+        body
+      );
+
+      console.log('✅ Настройки webhooks обновлены');
+      return response;
+    } catch (error) {
+      console.error('❌ Ошибка обновления webhooks:', error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = IikoService;
