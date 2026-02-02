@@ -36,6 +36,12 @@ class CronService {
       timezone: 'Asia/Novosibirsk'
     });
     console.log('⏰ Cron: ежедневный отчёт запланирован на 21:00');
+
+    // Проверка проблем каждые 15 минут (эскалация)
+    cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate(), {
+      timezone: 'Asia/Novosibirsk'
+    });
+    console.log('⏰ Cron: проверка проблем каждые 15 минут');
   }
 
   /**
@@ -168,6 +174,149 @@ class CronService {
       }
     } catch (error) {
       console.error('❌ Ошибка в sendEndReminders:', error);
+    }
+  }
+
+  /**
+   * Проверка проблем и эскалация в группу руководителей
+   */
+  async checkProblemsAndEscalate() {
+    console.log('🔍 Проверка проблем для эскалации...');
+
+    try {
+      const problems = [];
+
+      // 1. Проверяем сотрудников, которые не открыли смену вовремя
+      const lateEmployees = await this.checkLateShiftStart();
+      problems.push(...lateEmployees);
+
+      // 2. Проверяем слишком длинные смены (> 12 часов)
+      const longShifts = await this.checkLongShifts();
+      problems.push(...longShifts);
+
+      // Если есть проблемы — отправляем в группу
+      if (problems.length > 0) {
+        await this.sendEscalation(problems);
+      } else {
+        console.log('✅ Проблем не обнаружено');
+      }
+    } catch (error) {
+      console.error('❌ Ошибка проверки проблем:', error.message);
+    }
+  }
+
+  /**
+   * Проверить сотрудников, которые опаздывают на смену
+   * (по расписанию смена началась, но не открыта в течение 15 минут)
+   */
+  async checkLateShiftStart() {
+    const problems = [];
+
+    try {
+      const now = new Date();
+      const currentTime = now.toLocaleTimeString('ru-RU', {
+        timeZone: 'Asia/Novosibirsk',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const today = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+
+      // Получаем расписание на сегодня
+      const schedule = await this.sheetsService.getTodaySchedule();
+
+      for (const shift of schedule) {
+        // Парсим время начала смены
+        const [startHour, startMin] = shift.start_time.split(':').map(Number);
+        const [nowHour, nowMin] = currentTime.split(':').map(Number);
+
+        const startMinutes = startHour * 60 + startMin;
+        const nowMinutes = nowHour * 60 + nowMin;
+
+        // Если прошло больше 15 минут после начала смены
+        if (nowMinutes > startMinutes + 15 && nowMinutes < startMinutes + 60) {
+          // Проверяем, открыта ли смена
+          const activeShift = await this.sheetsService.getActiveShift(shift.phone);
+
+          if (!activeShift) {
+            problems.push({
+              type: 'late_start',
+              employee: shift.full_name,
+              phone: shift.phone,
+              scheduled_time: shift.start_time,
+              current_time: currentTime,
+              minutes_late: nowMinutes - startMinutes
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Ошибка проверки опозданий:', error.message);
+    }
+
+    return problems;
+  }
+
+  /**
+   * Проверить слишком длинные смены (> 12 часов)
+   */
+  async checkLongShifts() {
+    const problems = [];
+
+    try {
+      const activeShifts = await this.sheetsService.getAllActiveShifts();
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+      for (const shift of activeShifts) {
+        const [startHour, startMin] = shift.start_time.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+
+        let durationMinutes = nowMinutes - startMinutes;
+        if (durationMinutes < 0) durationMinutes += 24 * 60; // Переход через полночь
+
+        // Если смена длится больше 12 часов
+        if (durationMinutes > 12 * 60) {
+          problems.push({
+            type: 'long_shift',
+            employee: shift.full_name,
+            phone: shift.phone,
+            start_time: shift.start_time,
+            duration_hours: (durationMinutes / 60).toFixed(1)
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Ошибка проверки длинных смен:', error.message);
+    }
+
+    return problems;
+  }
+
+  /**
+   * Отправить эскалацию в группу руководителей
+   */
+  async sendEscalation(problems) {
+    console.log(`⚠️ Отправка эскалации: ${problems.length} проблем`);
+
+    const lines = problems.map(p => {
+      if (p.type === 'late_start') {
+        return `🚨 *Опоздание*: ${p.employee}\n   Должен был начать в ${p.scheduled_time}, опаздывает ${p.minutes_late} мин`;
+      }
+      if (p.type === 'long_shift') {
+        return `⏰ *Длинная смена*: ${p.employee}\n   Работает уже ${p.duration_hours} часов (с ${p.start_time})`;
+      }
+      return `❓ Неизвестная проблема: ${JSON.stringify(p)}`;
+    });
+
+    const message =
+      `⚠️ *ЭСКАЛАЦИЯ*\n\n` +
+      lines.join('\n\n');
+
+    try {
+      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'Markdown' });
+      console.log('✅ Эскалация отправлена в группу');
+    } catch (error) {
+      console.error('❌ Ошибка отправки эскалации:', error.message);
     }
   }
 

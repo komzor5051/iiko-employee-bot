@@ -502,6 +502,45 @@ class GoogleSheetsService {
         total_payment: parseFloat(row[7]) || 0
       }));
   }
+
+  /**
+   * Получить расписание на сегодня
+   * @returns {Array} - Массив смен с данными о времени
+   */
+  async getTodaySchedule() {
+    const rows = await this.getSheetData('Расписание!A2:H1000');
+    const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+
+    return rows
+      .filter(row => row[0] === today)
+      .map((row, index) => ({
+        rowIndex: index + 2,
+        date: row[0],
+        phone: row[1],
+        full_name: row[2],
+        start_time: row[3],
+        end_time: row[4]
+      }));
+  }
+
+  /**
+   * Получить все открытые (незакрытые) смены
+   * @returns {Array} - Массив активных смен
+   */
+  async getAllActiveShifts() {
+    const rows = await this.getSheetData('Shift Logs!A2:H1000');
+    const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+
+    return rows
+      .filter(row => row[0] === today && row[3] && !row[4]) // Сегодняшние, есть начало, нет конца
+      .map((row, index) => ({
+        rowIndex: index + 2,
+        date: row[0],
+        phone: row[1],
+        full_name: row[2],
+        start_time: row[3]
+      }));
+  }
 }
 
 module.exports = GoogleSheetsService;
