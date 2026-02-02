@@ -642,20 +642,35 @@ const webhookHandler = new WebhookHandler(bot, sheetsService);
 // Инициализация webhook сервера
 const webhookServer = new WebhookServer((data) => webhookHandler.handle(data));
 
+// Запуск webhook сервера СРАЗУ (чтобы Railway видел живой сервис)
+webhookServer.start();
+
+// Функция запуска бота с retry
+async function startBotWithRetry(maxRetries = 5, delayMs = 10000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 Попытка запуска бота ${attempt}/${maxRetries}...`);
+      await bot.launch();
+      console.log('✅ Бот успешно запущен!');
+      console.log(`📱 Bot username: @${bot.botInfo?.username}`);
+
+      // Запуск cron-напоминаний после старта бота
+      cronService.start();
+      console.log('✅ Cron-напоминания запущены');
+      return;
+    } catch (err) {
+      console.error(`❌ Попытка ${attempt} не удалась:`, err.message);
+
+      if (err.message.includes('409') && attempt < maxRetries) {
+        console.log(`⏳ Ждём ${delayMs / 1000} сек перед следующей попыткой...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else if (attempt === maxRetries) {
+        console.error('❌ Все попытки исчерпаны. Бот не запущен.');
+        // Не выходим из процесса — webhook сервер продолжает работать
+      }
+    }
+  }
+}
+
 // Запуск бота
-bot.launch()
-  .then(() => {
-    console.log('✅ Бот успешно запущен!');
-    console.log(`📱 Bot username: @${bot.botInfo?.username}`);
-
-    // Запуск cron-напоминаний после старта бота
-    cronService.start();
-    console.log('✅ Cron-напоминания запущены');
-
-    // Запуск webhook сервера
-    webhookServer.start();
-  })
-  .catch(err => {
-    console.error('❌ Ошибка запуска бота:', err);
-    process.exit(1);
-  });
+startBotWithRetry();
