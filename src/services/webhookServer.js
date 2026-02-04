@@ -61,10 +61,17 @@ class WebhookServer {
    */
   handleIikoWebhook(req, res) {
     // Проверка авторизации
-    const authHeader = req.headers['authorization'];
+    const authHeader = req.headers['authorization'] || '';
 
-    if (authHeader !== this.authToken) {
+    // iiko может отправлять токен как "Bearer TOKEN" или просто "TOKEN"
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : authHeader;
+
+    if (!this.authToken || token !== this.authToken) {
       console.warn('⚠️ Webhook: неверный токен авторизации');
+      console.warn(`   Получен: "${authHeader.slice(0, 20)}..."`);
+      console.warn(`   Ожидается: "${this.authToken ? this.authToken.slice(0, 10) + '...' : 'НЕ НАСТРОЕН'}"`);
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
