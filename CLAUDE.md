@@ -33,7 +33,7 @@ src/
 │   ├── webhookServer.js        # HTTP server for receiving iiko webhooks
 │   ├── webhookHandler.js       # Handler for PersonalShift events from iiko
 │   └── locationService.js      # Geolocation check for store proximity
-├── handlers/                   # (Modular handlers - currently unused, logic in index.js)
+├── handlers/                   # Modular handlers (registration active, most logic currently in src/index.js)
 ├── middleware/
 │   ├── logger.js               # Request logging middleware
 │   ├── auth.js                 # Authentication middleware
@@ -46,7 +46,8 @@ scripts/
 ├── syncIikoIds.js              # One-time script to match employees by name
 ├── setupWebhook.js             # Configure iiko webhook endpoint
 ├── initScheduleSheet.js        # Initialize schedule sheet columns
-└── testSystem.js               # Full system test script
+├── testSystem.js               # Full system test script
+└── testDailyReport.js          # Test daily report generation
 ```
 
 ### Data Flow
@@ -86,6 +87,7 @@ scripts/
 - **Location validation**: `pendingLocationChecks` Map tracks open/close actions awaiting geolocation (10min timeout)
 - **Graceful shutdown**: SIGINT/SIGTERM handlers stop webhook server and bot
 - **Startup order**: Webhook server starts first (for Railway health checks), then bot with retry logic
+- **Managers group**: Hardcoded `MANAGERS_GROUP_ID = -5237107467` in cronService.js and testSystem.js for escalations and daily reports
 
 ### Environment Variables
 

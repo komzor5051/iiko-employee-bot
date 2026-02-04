@@ -17,30 +17,24 @@ class CronService {
 
   /**
    * Запустить все cron-задачи
+   * Время в UTC (Railway не всегда поддерживает timezone)
+   * Asia/Novosibirsk = UTC+7
    */
   start() {
-    // Вечернее напоминание в 20:00 по Asia/Novosibirsk
-    cron.schedule('0 20 * * *', () => this.sendEveningReminders(), {
-      timezone: 'Asia/Novosibirsk'
-    });
-    console.log('⏰ Cron: вечерние напоминания запланированы на 20:00');
+    // Вечернее напоминание в 20:00 NSK = 13:00 UTC
+    cron.schedule('0 13 * * *', () => this.sendEveningReminders());
+    console.log('⏰ Cron: вечерние напоминания запланированы на 20:00 (13:00 UTC)');
 
     // Проверка каждые 5 минут для напоминаний "за час"
-    cron.schedule('*/5 * * * *', () => this.sendHourlyReminders(), {
-      timezone: 'Asia/Novosibirsk'
-    });
+    cron.schedule('*/5 * * * *', () => this.sendHourlyReminders());
     console.log('⏰ Cron: проверка напоминаний каждые 5 минут');
 
-    // Ежедневный отчёт в группу руководителей в 21:30
-    cron.schedule('30 21 * * *', () => this.sendDailyReport(), {
-      timezone: 'Asia/Novosibirsk'
-    });
-    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:30');
+    // Ежедневный отчёт в группу руководителей в 21:30 NSK = 14:30 UTC
+    cron.schedule('30 14 * * *', () => this.sendDailyReport());
+    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:30 (14:30 UTC)');
 
     // Проверка проблем каждые 15 минут (эскалация)
-    cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate(), {
-      timezone: 'Asia/Novosibirsk'
-    });
+    cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate());
     console.log('⏰ Cron: проверка проблем каждые 15 минут');
   }
 
