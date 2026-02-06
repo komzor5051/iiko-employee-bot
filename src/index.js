@@ -621,16 +621,18 @@ bot.action('back_to_menu', async (ctx) => {
 });
 
 // Graceful shutdown
+let botStarted = false;
+
 process.once('SIGINT', () => {
   console.log('⚠️ Получен сигнал SIGINT, останавливаем...');
   webhookServer.stop();
-  bot.stop('SIGINT');
+  if (botStarted) bot.stop('SIGINT');
 });
 
 process.once('SIGTERM', () => {
   console.log('⚠️ Получен сигнал SIGTERM, останавливаем...');
   webhookServer.stop();
-  bot.stop('SIGTERM');
+  if (botStarted) bot.stop('SIGTERM');
 });
 
 // Инициализация и запуск cron-напоминаний
@@ -646,11 +648,16 @@ const webhookServer = new WebhookServer((data) => webhookHandler.handle(data));
 webhookServer.start();
 
 // Функция запуска бота с retry
-async function startBotWithRetry(maxRetries = 5, delayMs = 10000) {
+async function startBotWithRetry(maxRetries = 10, delayMs = 3000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`🔄 Попытка запуска бота ${attempt}/${maxRetries}...`);
-      await bot.launch();
+
+      // Сбрасываем предыдущую polling-сессию перед запуском
+      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+
+      await bot.launch({ dropPendingUpdates: true });
+      botStarted = true;
       console.log('✅ Бот успешно запущен!');
       console.log(`📱 Bot username: @${bot.botInfo?.username}`);
 
