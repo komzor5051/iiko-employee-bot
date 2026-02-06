@@ -87,14 +87,10 @@ class WebhookServer {
       try {
         const data = JSON.parse(body);
 
-        console.log('📨 Получен webhook от iiko:', {
-          eventType: data.eventType,
-          eventTime: data.eventTime,
-          organizationId: data.organizationId
-        });
-
-        // Логируем полные данные для отладки
-        console.log('📋 Полные данные webhook:', JSON.stringify(data, null, 2));
+        // iiko отправляет массив событий
+        const events = Array.isArray(data) ? data : [data];
+        console.log(`📨 Получен webhook от iiko: ${events.length} событий`);
+        events.forEach((e, i) => console.log(`   [${i}] ${e.eventType} | ${e.eventTime} | org: ${e.organizationId}`));
 
         // Вызываем обработчик
         if (this.onWebhook) {
