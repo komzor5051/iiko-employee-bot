@@ -284,7 +284,7 @@ class GoogleSheetsService {
   async getTomorrowSchedule() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toLocaleDateString('ru-RU'); // ДД.ММ.ГГГГ
+    const dateStr = tomorrow.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
     return this.getScheduleForDate(dateStr);
   }
 
@@ -294,9 +294,14 @@ class GoogleSheetsService {
    */
   async getShiftsStartingInOneHour() {
     const now = new Date();
-    const todayStr = now.toLocaleDateString('ru-RU');
+    const todayStr = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
     const shifts = await this.getScheduleForDate(todayStr);
+
+    // Текущее время в Новосибирске
+    const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
+    const [nskHours, nskMinutes] = nskTime.split(':').map(Number);
+    const currentMinutes = nskHours * 60 + nskMinutes;
 
     return shifts.filter(shift => {
       if (!shift.start_time || shift.reminder_start_sent) return false;
@@ -304,7 +309,6 @@ class GoogleSheetsService {
       const [shiftHours, shiftMinutes] = shift.start_time.split(':').map(Number);
       const shiftStartMinutes = shiftHours * 60 + shiftMinutes;
 
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const targetMinutes = currentMinutes + 60; // Через час
 
       // Допуск ±5 минут
@@ -318,9 +322,14 @@ class GoogleSheetsService {
    */
   async getShiftsEndingInOneHour() {
     const now = new Date();
-    const todayStr = now.toLocaleDateString('ru-RU');
+    const todayStr = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
     const shifts = await this.getScheduleForDate(todayStr);
+
+    // Текущее время в Новосибирске
+    const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
+    const [nskHours, nskMinutes] = nskTime.split(':').map(Number);
+    const currentMinutes = nskHours * 60 + nskMinutes;
 
     return shifts.filter(shift => {
       if (!shift.end_time || shift.reminder_end_sent) return false;
@@ -328,7 +337,6 @@ class GoogleSheetsService {
       const [shiftHours, shiftMinutes] = shift.end_time.split(':').map(Number);
       const shiftEndMinutes = shiftHours * 60 + shiftMinutes;
 
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const targetMinutes = currentMinutes + 60; // Через час
 
       // Допуск ±5 минут
@@ -372,8 +380,8 @@ class GoogleSheetsService {
    */
   async logShiftStart(data) {
     const now = new Date();
-    const date = now.toLocaleDateString('ru-RU'); // ДД.ММ.ГГГГ
-    const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); // ЧЧ:ММ
+    const date = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+    const time = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit' });
 
     const values = [
       date,           // A: Дата
@@ -437,7 +445,7 @@ class GoogleSheetsService {
     }
 
     const now = new Date();
-    const endTime = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const endTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit' });
 
     // Парсим время начала и вычисляем длительность
     const [startHours, startMinutes] = activeShift.start_time.split(':').map(Number);

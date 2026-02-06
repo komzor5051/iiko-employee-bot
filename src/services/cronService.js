@@ -21,20 +21,22 @@ class CronService {
    * Asia/Novosibirsk = UTC+7
    */
   start() {
-    // Вечернее напоминание в 20:00 NSK = 13:00 UTC
-    cron.schedule('0 13 * * *', () => this.sendEveningReminders());
-    console.log('⏰ Cron: вечерние напоминания запланированы на 20:00 (13:00 UTC)');
+    const tz = { timezone: 'Asia/Novosibirsk' };
+
+    // Вечернее напоминание в 20:00 NSK
+    cron.schedule('0 20 * * *', () => this.sendEveningReminders(), tz);
+    console.log('⏰ Cron: вечерние напоминания запланированы на 20:00 NSK');
 
     // Проверка каждые 5 минут для напоминаний "за час"
-    cron.schedule('*/5 * * * *', () => this.sendHourlyReminders());
+    cron.schedule('*/5 * * * *', () => this.sendHourlyReminders(), tz);
     console.log('⏰ Cron: проверка напоминаний каждые 5 минут');
 
-    // Ежедневный отчёт в группу руководителей в 21:30 NSK = 14:30 UTC
-    cron.schedule('30 14 * * *', () => this.sendDailyReport());
-    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:30 (14:30 UTC)');
+    // Ежедневный отчёт в группу руководителей в 21:30 NSK
+    cron.schedule('30 21 * * *', () => this.sendDailyReport(), tz);
+    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:30 NSK');
 
     // Проверка проблем каждые 15 минут (эскалация)
-    cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate());
+    cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate(), tz);
     console.log('⏰ Cron: проверка проблем каждые 15 минут');
   }
 
@@ -259,7 +261,9 @@ class CronService {
     try {
       const activeShifts = await this.sheetsService.getAllActiveShifts();
       const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
+      const [nskH, nskM] = nskTime.split(':').map(Number);
+      const nowMinutes = nskH * 60 + nskM;
 
       for (const shift of activeShifts) {
         const [startHour, startMin] = shift.start_time.split(':').map(Number);
@@ -294,20 +298,20 @@ class CronService {
 
     const lines = problems.map(p => {
       if (p.type === 'late_start') {
-        return `🚨 *Опоздание*: ${p.employee}\n   Должен был начать в ${p.scheduled_time}, опаздывает ${p.minutes_late} мин`;
+        return `🚨 <b>Опоздание</b>: ${p.employee}\n   Должен был начать в ${p.scheduled_time}, опаздывает ${p.minutes_late} мин`;
       }
       if (p.type === 'long_shift') {
-        return `⏰ *Длинная смена*: ${p.employee}\n   Работает уже ${p.duration_hours} часов (с ${p.start_time})`;
+        return `⏰ <b>Длинная смена</b>: ${p.employee}\n   Работает уже ${p.duration_hours} часов (с ${p.start_time})`;
       }
       return `❓ Неизвестная проблема: ${JSON.stringify(p)}`;
     });
 
     const message =
-      `⚠️ *ЭСКАЛАЦИЯ*\n\n` +
+      `⚠️ <b>ЭСКАЛАЦИЯ</b>\n\n` +
       lines.join('\n\n');
 
     try {
-      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'Markdown' });
+      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
       console.log('✅ Эскалация отправлена в группу');
     } catch (error) {
       console.error('❌ Ошибка отправки эскалации:', error.message);
@@ -325,8 +329,8 @@ class CronService {
       const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
       if (shifts.length === 0) {
-        const message = `📊 *Отчёт за ${today}*\n\nСегодня смен не было.`;
-        await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'Markdown' });
+        const message = `📊 <b>Отчёт за ${today}</b>\n\nСегодня смен не было.`;
+        await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
         console.log('✅ Отправлен пустой отчёт (смен не было)');
         return;
       }
@@ -341,13 +345,13 @@ class CronService {
       ).join('\n');
 
       const message =
-        `📊 *Отчёт за ${today}*\n\n` +
-        `👥 *Сотрудники:*\n${employeeLines}\n\n` +
+        `📊 <b>Отчёт за ${today}</b>\n\n` +
+        `👥 <b>Сотрудники:</b>\n${employeeLines}\n\n` +
         `━━━━━━━━━━━━━━━\n` +
-        `⏱ *Всего часов:* ${totalHours.toFixed(1)} ч\n` +
-        `💰 *К выплате:* ${totalPayment.toLocaleString('ru-RU')} ₽`;
+        `⏱ <b>Всего часов:</b> ${totalHours.toFixed(1)} ч\n` +
+        `💰 <b>К выплате:</b> ${totalPayment.toLocaleString('ru-RU')} ₽`;
 
-      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'Markdown' });
+      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
       console.log(`✅ Ежедневный отчёт отправлен. Смен: ${shifts.length}, часов: ${totalHours.toFixed(1)}, сумма: ${totalPayment}₽`);
     } catch (error) {
       console.error('❌ Ошибка отправки ежедневного отчёта:', error);
