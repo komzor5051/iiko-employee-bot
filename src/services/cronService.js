@@ -31,9 +31,9 @@ class CronService {
     cron.schedule('*/5 * * * *', () => this.sendHourlyReminders(), tz);
     console.log('⏰ Cron: проверка напоминаний каждые 5 минут');
 
-    // Ежедневный отчёт в группу руководителей в 21:30 NSK
-    cron.schedule('30 21 * * *', () => this.sendDailyReport(), tz);
-    console.log('⏰ Cron: ежедневный отчёт запланирован на 21:30 NSK');
+    // Ежедневный отчёт в группу руководителей в 22:30 NSK
+    cron.schedule('30 22 * * *', () => this.sendDailyReport(), tz);
+    console.log('⏰ Cron: ежедневный отчёт запланирован на 22:30 NSK');
 
     // Проверка проблем каждые 15 минут (эскалация)
     cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate(), tz);

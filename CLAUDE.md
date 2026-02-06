@@ -47,7 +47,7 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 | NSK Time | Cron | Job |
 |----------|------|-----|
 | 20:00 | `0 20 * * *` | Evening reminders for tomorrow's shifts |
-| 21:30 | `30 21 * * *` | Daily report to managers group |
+| 22:30 | `30 22 * * *` | Daily report to managers group |
 | Every 5 min | `*/5 * * * *` | Check for "1 hour before start/end" reminders |
 | Every 15 min | `*/15 * * * *` | Escalation check (late starts >15min, shifts >12h) |
 
