@@ -209,9 +209,11 @@ bot.on('location', async (ctx) => {
         );
       }
 
-      // Открываем смену в iiko (если есть iiko_id)
+      // Открываем смену в iiko
       let iikoStatus = '';
-      if (employee.iiko_id) {
+      if (!employee.iiko_id) {
+        iikoStatus = '\n⚠️ iiko ID не указан — смена только в таблице';
+      } else {
         try {
           await iikoService.openShift(employee.iiko_id);
           iikoStatus = '\n✅ Смена открыта в iiko';
@@ -272,9 +274,11 @@ bot.on('location', async (ctx) => {
     } else if (pendingAction.action === 'close') {
       // === ЗАКРЫТИЕ СМЕНЫ ===
 
-      // Закрываем смену в iiko (если есть iiko_id)
+      // Закрываем смену в iiko
       let iikoStatus = '';
-      if (employee.iiko_id) {
+      if (!employee.iiko_id) {
+        iikoStatus = '\n⚠️ iiko ID не указан — смена только в таблице';
+      } else {
         try {
           await iikoService.closeShift(employee.iiko_id);
           iikoStatus = '\n✅ Смена закрыта в iiko';
