@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-iiko Shift Bot — Telegram bot for employee shift management with iiko Cloud API and Google Sheets integration. Written in Russian for Russian users.
+iiko Shift Bot — Telegram bot for employee shift management with iiko Cloud API and Google Sheets integration. Written in Russian for Russian users. Deployed on Railway.
 
 ## Commands
 
@@ -22,48 +22,23 @@ pm2 start ecosystem.config.js      # Production with PM2
 
 ## Architecture
 
-```
-src/
-├── index.js                    # Entry point with all bot commands/actions
-├── bot.js                      # Telegraf instance with middleware setup
-├── config/env.js               # Environment validation (exits on missing vars)
-├── services/
-│   ├── googleSheetsService.js  # Google Sheets CRUD for employees and shifts
-│   ├── iikoService.js          # iiko Cloud API with token auto-refresh + webhook config
-│   ├── cronService.js          # Cron reminders + escalation + daily reports
-│   ├── webhookServer.js        # HTTP server for receiving iiko webhooks
-│   ├── webhookHandler.js       # Handler for PersonalShift events from iiko
-│   └── locationService.js      # Geolocation check for store proximity
-├── handlers/                   # Modular handlers (registration active, most logic currently in src/index.js)
-├── middleware/
-│   ├── logger.js               # Request logging middleware
-│   ├── auth.js                 # Authentication middleware
-│   └── errorHandler.js         # Global error handler
-└── utils/
-    ├── constants.js            # App constants
-    ├── messages.js             # Bot message templates
-    └── keyboards.js            # Inline/reply keyboard builders
-scripts/
-├── syncIikoIds.js              # One-time script to match employees by name
-├── setupWebhook.js             # Configure iiko webhook endpoint
-├── initScheduleSheet.js        # Initialize schedule sheet columns
-├── testSystem.js               # Full system test script
-└── testDailyReport.js          # Test daily report generation
-```
+Most bot logic (commands, callbacks, location handling) lives in `src/index.js` as a monolith. The `src/handlers/` directory has modular files (registration.js, shift.js, admin.js) but they are not wired up — `index.js` handles everything directly.
 
 ### Data Flow
 
 1. User sends `/start` → Bot checks `Сотрудники` sheet by Telegram ID
-2. Unregistered users share phone → Bot matches phone in sheet, saves Telegram ID
-3. Shift operations require geolocation → Bot validates user is within store radius
-4. Shift data writes to `Shift Logs` sheet and optionally syncs to iiko API
+2. Unregistered users share phone → Bot matches phone in sheet via `normalizePhone()`, saves Telegram ID
+3. Shift open/close requires geolocation → `pendingLocationChecks` Map stores action + timestamp, 10min timeout
+4. On valid location → shift logged to `Shift Logs` sheet and optionally synced to iiko API
+5. Bot uses inline keyboards (`Markup.inlineKeyboard`) for main UI, reply keyboards only for contact/location requests
 
 ### iiko Webhook Flow (reverse sync)
 
 1. Employee opens/closes shift in iiko terminal
 2. iiko sends POST to `/iiko-webhook` with PersonalShift event
-3. webhookHandler finds employee by iiko_id in Google Sheets
-4. Shift is logged to `Shift Logs` and notification sent to employee via Telegram
+3. `webhookServer.js` validates `Authorization` header (handles both `Bearer TOKEN` and bare `TOKEN` formats)
+4. `webhookHandler.js` finds employee by `iiko_id` in Google Sheets
+5. Shift is logged to `Shift Logs` and notification sent to employee via Telegram
 
 ### Cron Jobs (Asia/Novosibirsk)
 
@@ -74,7 +49,7 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 | 20:00 | `0 20 * * *` | Evening reminders for tomorrow's shifts |
 | 21:30 | `30 21 * * *` | Daily report to managers group |
 | Every 5 min | `*/5 * * * *` | Check for "1 hour before start/end" reminders |
-| Every 15 min | `*/15 * * * *` | Escalation check (late starts, shifts >12h) |
+| Every 15 min | `*/15 * * * *` | Escalation check (late starts >15min, shifts >12h) |
 
 ### Google Sheets Structure
 
@@ -88,15 +63,15 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 
 - **Telegraf.js v4**: `bot.command()`, `bot.action()`, `bot.on('contact')`, `bot.on('location')`, `Markup` for keyboards
 - **iiko token management**: 1h lifetime, auto-refresh 5min before expiry, retry on 401/429/503 with exponential backoff
-- **Phone normalization**: All phone comparisons use `normalizePhone()` to strip country code and non-digits
-- **Location validation**: `pendingLocationChecks` Map tracks open/close actions awaiting geolocation (10min timeout)
+- **Phone normalization**: All phone comparisons use `normalizePhone()` which strips to 10 digits (removes country code 7/8). This is critical for matching — phones in sheets may be in any format.
+- **Location validation**: `pendingLocationChecks` Map in `src/index.js` tracks open/close actions awaiting geolocation (10min timeout, cleaned up every 60s via setInterval)
+- **Managers group**: Hardcoded `MANAGERS_GROUP_ID = -5237107467` in `cronService.js` and `testSystem.js` for escalations and daily reports
+- **Startup order**: Webhook server starts first (for Railway health checks on `PORT`), then bot launches with retry logic (up to 10 attempts, handles 409 Conflict)
 - **Graceful shutdown**: SIGINT/SIGTERM handlers stop webhook server and bot
-- **Startup order**: Webhook server starts first (for Railway health checks), then bot with retry logic
-- **Managers group**: Hardcoded `MANAGERS_GROUP_ID = -5237107467` in cronService.js and testSystem.js for escalations and daily reports
 
 ### Environment Variables
 
-Required (validated at startup):
+Required (validated at startup in `src/config/env.js`, exits on missing):
 - `TELEGRAM_BOT_TOKEN`
 - `GOOGLE_SHEET_ID`
 - `GOOGLE_SERVICE_ACCOUNT_JSON` (full JSON object as string)
@@ -115,13 +90,6 @@ Optional other:
 - `ADMIN_TELEGRAM_IDS` (comma-separated)
 - `NODE_ENV` (default: development)
 
-### Webhook Setup
-
-1. Add `IIKO_WEBHOOK_TOKEN=your-secret-token` to `.env`
-2. Deploy server with public URL (or use ngrok for testing)
-3. Run: `WEBHOOK_URL=https://your-domain.com/iiko-webhook npm run setup-webhook`
-4. Or configure in iikoWeb: Settings → Cloud API → Webhook settings
-
 ### Deployment (Railway)
 
-The app starts webhook server first (for Railway health checks on `PORT`), then initializes bot with retry logic. Graceful shutdown handlers are registered for SIGINT/SIGTERM.
+The app starts webhook server first (for Railway health checks on `PORT`), then initializes bot with retry logic. On startup, it calls `deleteWebhook({ drop_pending_updates: true })` to clear any stale polling sessions before launching. Graceful shutdown handlers are registered for SIGINT/SIGTERM.

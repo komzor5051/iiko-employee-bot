@@ -10,28 +10,34 @@ class WebhookHandler {
 
   /**
    * Главный обработчик webhook событий
-   * @param {Object} data - Данные webhook от iiko
+   * iiko отправляет массив событий, не один объект
+   * @param {Array|Object} data - Данные webhook от iiko
    */
   async handle(data) {
-    const { eventType, eventInfo, organizationId, eventTime } = data;
+    // iiko sends an array of events
+    const events = Array.isArray(data) ? data : [data];
 
-    console.log(`🔔 Обработка события: ${eventType}`);
+    for (const event of events) {
+      const { eventType, eventInfo, organizationId, eventTime } = event;
 
-    switch (eventType) {
-      case 'PersonalShift':
-        await this.handlePersonalShift(eventInfo, eventTime);
-        break;
+      console.log(`🔔 Обработка события: ${eventType}`);
 
-      case 'StopListUpdate':
-        console.log('📋 Обновление стоп-листа (игнорируем)');
-        break;
+      switch (eventType) {
+        case 'PersonalShift':
+          await this.handlePersonalShift(eventInfo, eventTime);
+          break;
 
-      case 'DeliveryOrderUpdate':
-        console.log('🚚 Обновление заказа доставки (игнорируем)');
-        break;
+        case 'StopListUpdate':
+          console.log('📋 Обновление стоп-листа (игнорируем)');
+          break;
 
-      default:
-        console.log(`❓ Неизвестный тип события: ${eventType}`);
+        case 'DeliveryOrderUpdate':
+          console.log('🚚 Обновление заказа доставки (игнорируем)');
+          break;
+
+        default:
+          console.log(`❓ Неизвестный тип события: ${eventType}`);
+      }
     }
   }
 
@@ -47,7 +53,7 @@ class WebhookHandler {
       // Структура eventInfo может быть разной, логируем для изучения
       // Типичные поля: employeeId, isOpened, clockInTime, clockOutTime
 
-      const employeeId = eventInfo.employeeId || eventInfo.employee?.id;
+      const employeeId = eventInfo.employeeId || eventInfo.employee?.id || eventInfo.id;
       const isOpened = eventInfo.isOpened ?? eventInfo.opened ?? eventInfo.isOpen;
 
       if (!employeeId) {

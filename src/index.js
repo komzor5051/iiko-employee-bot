@@ -217,6 +217,27 @@ bot.on('location', async (ctx) => {
           iikoStatus = '\n✅ Смена открыта в iiko';
         } catch (iikoError) {
           console.error('Ошибка iiko при открытии:', iikoError.message);
+          const errorData = iikoError.response?.data;
+          const errorMsg = typeof errorData === 'string' ? errorData : JSON.stringify(errorData || '');
+
+          // Если iiko вернул ошибку "смена уже открыта"
+          if (iikoError.response?.status === 400 || errorMsg.toLowerCase().includes('already') || errorMsg.toLowerCase().includes('opened') || errorMsg.includes('уже')) {
+            pendingLocationChecks.delete(telegramId);
+            return ctx.reply(
+              '⚠️ У тебя уже есть открытая смена в iiko!\n\n' +
+              'Закрой текущую смену перед открытием новой.',
+              {
+                reply_markup: {
+                  remove_keyboard: true,
+                  inline_keyboard: [
+                    [{ text: '📤 Закрыть смену', callback_data: 'close_shift' }],
+                    [{ text: '◀️ Назад', callback_data: 'back_to_menu' }]
+                  ]
+                }
+              }
+            );
+          }
+
           iikoStatus = '\n⚠️ Не удалось открыть в iiko';
         }
       }
@@ -259,7 +280,15 @@ bot.on('location', async (ctx) => {
           iikoStatus = '\n✅ Смена закрыта в iiko';
         } catch (iikoError) {
           console.error('Ошибка iiko при закрытии:', iikoError.message);
-          iikoStatus = '\n⚠️ Не удалось закрыть в iiko';
+          const errorData = iikoError.response?.data;
+          const errorMsg = typeof errorData === 'string' ? errorData : JSON.stringify(errorData || '');
+
+          // Если iiko вернул ошибку "смена не открыта"
+          if (iikoError.response?.status === 400 && (errorMsg.toLowerCase().includes('not opened') || errorMsg.toLowerCase().includes('closed') || errorMsg.includes('не открыта'))) {
+            iikoStatus = '\n⚠️ Смена в iiko уже была закрыта';
+          } else {
+            iikoStatus = '\n⚠️ Не удалось закрыть в iiko';
+          }
         }
       }
 
