@@ -9,14 +9,15 @@ iiko Shift Bot — Telegram bot for employee shift management with iiko Cloud AP
 ## Commands
 
 ```bash
-npm install                    # Install dependencies
-npm run dev                    # Development with nodemon hot reload
-npm start                      # Production
-npm run sync-iiko              # Sync iiko employee IDs to Google Sheets
-npm run setup-webhook          # Configure iiko webhook (requires WEBHOOK_URL env)
-npm run init-schedule          # Initialize schedule sheet structure
-node scripts/testSystem.js     # Run full system test (Google Sheets, iiko API, Telegram, escalation)
-pm2 start ecosystem.config.js  # Production with PM2
+npm install                        # Install dependencies
+npm run dev                        # Development with nodemon hot reload
+npm start                          # Production
+npm run sync-iiko                  # Sync iiko employee IDs to Google Sheets
+npm run setup-webhook              # Configure iiko webhook (requires WEBHOOK_URL env)
+npm run init-schedule              # Initialize schedule sheet structure
+node scripts/testSystem.js         # Full system test (Google Sheets, iiko API, Telegram, escalation)
+node scripts/testDailyReport.js    # Test daily report generation
+pm2 start ecosystem.config.js      # Production with PM2
 ```
 
 ## Architecture
@@ -64,12 +65,16 @@ scripts/
 3. webhookHandler finds employee by iiko_id in Google Sheets
 4. Shift is logged to `Shift Logs` and notification sent to employee via Telegram
 
-### Cron Jobs (Asia/Novosibirsk timezone)
+### Cron Jobs (Asia/Novosibirsk)
 
-- **20:00** — Evening reminders for tomorrow's shifts
-- **Every 5 min** — Check for "1 hour before start/end" reminders
-- **Every 15 min** — Escalation check (late starts, shifts >12h → notify managers group)
-- **21:30** — Daily report to managers group (shift summary, hours, payments)
+All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expressions are in NSK time.
+
+| NSK Time | Cron | Job |
+|----------|------|-----|
+| 20:00 | `0 20 * * *` | Evening reminders for tomorrow's shifts |
+| 21:30 | `30 21 * * *` | Daily report to managers group |
+| Every 5 min | `*/5 * * * *` | Check for "1 hour before start/end" reminders |
+| Every 15 min | `*/15 * * * *` | Escalation check (late starts, shifts >12h) |
 
 ### Google Sheets Structure
 
@@ -116,3 +121,7 @@ Optional other:
 2. Deploy server with public URL (or use ngrok for testing)
 3. Run: `WEBHOOK_URL=https://your-domain.com/iiko-webhook npm run setup-webhook`
 4. Or configure in iikoWeb: Settings → Cloud API → Webhook settings
+
+### Deployment (Railway)
+
+The app starts webhook server first (for Railway health checks on `PORT`), then initializes bot with retry logic. Graceful shutdown handlers are registered for SIGINT/SIGTERM.
