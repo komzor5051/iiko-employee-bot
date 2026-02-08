@@ -322,16 +322,34 @@ class CronService {
    * Отправить ежедневный отчёт в группу руководителей
    */
   async sendDailyReport() {
-    console.log('📊 Формирование ежедневного отчёта...');
+    const now = new Date();
+    const today = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+    const timeNSK = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit' });
+    console.log(`📊 [DailyReport] Запуск в ${timeNSK} NSK, дата: "${today}", группа: ${this.managersGroupId}`);
+
+    let shifts;
+    try {
+      shifts = await this.sheetsService.getTodayShiftLogs();
+      console.log(`📊 [DailyReport] getTodayShiftLogs вернул ${shifts.length} смен`);
+    } catch (error) {
+      console.error(`❌ [DailyReport] Ошибка Google Sheets:`, error.message);
+      return;
+    }
 
     try {
-      const shifts = await this.sheetsService.getTodayShiftLogs();
-      const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
-
       if (shifts.length === 0) {
+        // Логируем первые даты из таблицы для диагностики формата
+        try {
+          const allRows = await this.sheetsService.getSheetData('Shift Logs!A2:A20');
+          const sampleDates = allRows.map(r => r[0]).filter(Boolean).slice(-5);
+          console.log(`📊 [DailyReport] Смен 0. Формат today="${today}", последние даты в таблице: [${sampleDates.join(', ')}]`);
+        } catch (e) {
+          console.log(`📊 [DailyReport] Смен 0. Не удалось прочитать примеры дат: ${e.message}`);
+        }
+
         const message = `📊 <b>Отчёт за ${today}</b>\n\nСегодня смен не было.`;
         await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
-        console.log('✅ Отправлен пустой отчёт (смен не было)');
+        console.log('✅ [DailyReport] Отправлен пустой отчёт');
         return;
       }
 
@@ -352,9 +370,12 @@ class CronService {
         `💰 <b>К выплате:</b> ${totalPayment.toLocaleString('ru-RU')} ₽`;
 
       await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
-      console.log(`✅ Ежедневный отчёт отправлен. Смен: ${shifts.length}, часов: ${totalHours.toFixed(1)}, сумма: ${totalPayment}₽`);
+      console.log(`✅ [DailyReport] Отправлен. Смен: ${shifts.length}, часов: ${totalHours.toFixed(1)}, сумма: ${totalPayment}₽`);
     } catch (error) {
-      console.error('❌ Ошибка отправки ежедневного отчёта:', error);
+      console.error(`❌ [DailyReport] Ошибка отправки в Telegram (группа ${this.managersGroupId}):`, error.message);
+      if (error.response) {
+        console.error(`❌ [DailyReport] Telegram API: ${error.response.error_code} — ${error.response.description}`);
+      }
     }
   }
 }
