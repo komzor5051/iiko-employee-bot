@@ -365,6 +365,47 @@ bot.command('report', async (ctx) => {
   }
 });
 
+// ===== КОМАНДА /test_reminder (тестовое оповещение) =====
+bot.command('test_reminder', async (ctx) => {
+  const telegramId = ctx.from.id;
+
+  if (config.adminIds.length > 0 && !config.adminIds.includes(telegramId)) {
+    return ctx.reply('❌ Только администраторы могут тестировать оповещения.');
+  }
+
+  await ctx.reply('🧪 Запускаю тестовые оповещения...');
+  try {
+    // Имитируем напоминание "за час до конца"
+    await bot.telegram.sendMessage(telegramId,
+      `⏰ Смена заканчивается через час!\n\n` +
+      `Тестовый сотрудник, не забудь закрыть смену.\n` +
+      `Время окончания: 21:00\n\n` +
+      `🧪 (тестовое оповещение)`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📤 Закрыть смену', callback_data: 'close_shift' }]
+          ]
+        }
+      }
+    );
+
+    // Показываем реальное состояние расписания
+    const startShifts = await sheetsService.getShiftsStartingInOneHour();
+    const endShifts = await sheetsService.getShiftsEndingInOneHour();
+    const todaySchedule = await sheetsService.getTodaySchedule();
+
+    await ctx.reply(
+      `✅ Тестовое оповещение отправлено!\n\n` +
+      `📋 Расписание на сегодня: ${todaySchedule.length} смен\n` +
+      `🔔 Начинаются через час: ${startShifts.length}\n` +
+      `🔔 Заканчиваются через час: ${endShifts.length}`
+    );
+  } catch (error) {
+    await ctx.reply('❌ Ошибка: ' + error.message);
+  }
+});
+
 // ===== КОМАНДА /status =====
 bot.command('status', async (ctx) => {
   const telegramId = ctx.from.id;
