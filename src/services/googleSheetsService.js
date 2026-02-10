@@ -1,4 +1,5 @@
 const { google } = require('googleapis');
+const { formatDateNSK, getDatePartsNSK, dateMatchesRef } = require('../utils/dateUtils');
 
 /**
  * Сервис для работы с Google Sheets API
@@ -256,11 +257,12 @@ class GoogleSheetsService {
 
   /**
    * Получить расписание на конкретную дату
-   * @param {string} dateStr - Дата в формате ДД.ММ.ГГГГ
+   * @param {Date} refDate - Объект Date для сравнения
    * @returns {Array} - Массив смен на указанную дату
    */
-  async getScheduleForDate(dateStr) {
+  async getScheduleForDate(refDate) {
     const rows = await this.getSheetData('Расписание!A2:H');
+    const refParts = getDatePartsNSK(refDate);
 
     return rows
       .map((row, i) => ({
@@ -274,7 +276,7 @@ class GoogleSheetsService {
         reminder_end_sent: (row[7] || '').toLowerCase() === 'да',
         rowIndex: i + 2
       }))
-      .filter(shift => shift.date === dateStr && shift.phone);
+      .filter(shift => dateMatchesRef(shift.date, refParts) && shift.phone);
   }
 
   /**
@@ -284,8 +286,7 @@ class GoogleSheetsService {
   async getTomorrowSchedule() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
-    return this.getScheduleForDate(dateStr);
+    return this.getScheduleForDate(tomorrow);
   }
 
   /**
@@ -294,9 +295,8 @@ class GoogleSheetsService {
    */
   async getShiftsStartingInOneHour() {
     const now = new Date();
-    const todayStr = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
-    const shifts = await this.getScheduleForDate(todayStr);
+    const shifts = await this.getScheduleForDate(now);
 
     // Текущее время в Новосибирске
     const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -322,9 +322,8 @@ class GoogleSheetsService {
    */
   async getShiftsEndingInOneHour() {
     const now = new Date();
-    const todayStr = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
-    const shifts = await this.getScheduleForDate(todayStr);
+    const shifts = await this.getScheduleForDate(now);
 
     // Текущее время в Новосибирске
     const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -380,7 +379,7 @@ class GoogleSheetsService {
    */
   async logShiftStart(data) {
     const now = new Date();
-    const date = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+    const date = formatDateNSK(now);
     const time = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit' });
 
     const values = [
@@ -494,11 +493,10 @@ class GoogleSheetsService {
    */
   async getTodayShiftLogs() {
     const rows = await this.getSheetData('Shift Logs!A2:H');
-    // Используем Asia/Novosibirsk для правильной даты на сервере
-    const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' }); // ДД.ММ.ГГГГ
+    const todayParts = getDatePartsNSK();
 
     return rows
-      .filter(row => row[0] === today && row[4]) // Только сегодняшние и закрытые смены
+      .filter(row => dateMatchesRef(row[0], todayParts) && row[4]) // Только сегодняшние и закрытые смены
       .map(row => ({
         date: row[0],
         phone: row[1],
@@ -517,10 +515,10 @@ class GoogleSheetsService {
    */
   async getTodaySchedule() {
     const rows = await this.getSheetData('Расписание!A2:H');
-    const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+    const todayParts = getDatePartsNSK();
 
     return rows
-      .filter(row => row[0] === today)
+      .filter(row => dateMatchesRef(row[0], todayParts))
       .map((row, index) => ({
         rowIndex: index + 2,
         date: row[0],
@@ -537,10 +535,10 @@ class GoogleSheetsService {
    */
   async getAllActiveShifts() {
     const rows = await this.getSheetData('Shift Logs!A2:H');
-    const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
+    const todayParts = getDatePartsNSK();
 
     return rows
-      .filter(row => row[0] === today && row[3] && !row[4]) // Сегодняшние, есть начало, нет конца
+      .filter(row => dateMatchesRef(row[0], todayParts) && row[3] && !row[4]) // Сегодняшние, есть начало, нет конца
       .map((row, index) => ({
         rowIndex: index + 2,
         date: row[0],

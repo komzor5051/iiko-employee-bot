@@ -29,7 +29,7 @@ All bot logic (commands, callbacks, location handling) lives in `src/index.js`. 
 
 **Dead code directories** — these files exist but are **not wired up** (stubs from original plan in `TODO.md`):
 - `src/handlers/` — `registration.js`, `shift.js`, `admin.js` (all logic is in `index.js`)
-- `src/utils/` — `constants.js`, `messages.js`, `keyboards.js` (empty stubs)
+- `src/utils/constants.js`, `messages.js`, `keyboards.js` — empty stubs
 - `src/middleware/auth.js` — never imported (auth is inline in `index.js`)
 
 **Active service layer**:
@@ -38,7 +38,8 @@ All bot logic (commands, callbacks, location handling) lives in `src/index.js`. 
 - `src/services/iikoService.js` — iiko Cloud API with token management and retry logic
 - `src/services/locationService.js` — Haversine distance check against store coordinates
 - `src/services/cronService.js` — Scheduled reminders, escalation (evening, hourly, and problem checks)
-- `src/services/dailyReport.js` — Daily report generation with date normalization (shared between cron and `/report` command)
+- `src/services/dailyReport.js` — Daily report generation (shared between cron and `/report` command)
+- `src/utils/dateUtils.js` — Deterministic date formatting (`formatDateNSK` via `formatToParts`) and robust comparison (`dateMatchesRef`)
 - `src/services/webhookServer.js` — HTTP server for iiko webhooks + health check
 - `src/services/webhookHandler.js` — Processes iiko PersonalShift events into sheet logs + Telegram notifications
 - `src/config/env.js` — Environment variable validation and parsing (includes `managersGroupId`)
@@ -100,7 +101,7 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 - **Managers group**: `MANAGERS_GROUP_ID` configured in `config/env.js` as `managersGroupId` (env var `MANAGERS_GROUP_ID`, default `-5237107467`). Used by `dailyReport.js`, `cronService.js`, and `testSystem.js`
 - **Startup order**: Webhook server starts first (for Railway health checks on `PORT`), then bot launches with retry logic (up to 10 attempts, handles 409 Conflict)
 - **Graceful shutdown**: SIGINT/SIGTERM handlers stop webhook server and bot
-- **All dates/times use NSK timezone**: `toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' })` pattern throughout
+- **All dates/times use NSK timezone**: Date writes use `formatDateNSK()` (from `src/utils/dateUtils.js`) via `Intl.DateTimeFormat.formatToParts` for deterministic DD.MM.YYYY output regardless of server locale. Date comparisons use `dateMatchesRef()` which handles DD.MM.YYYY and falls back to MM/DD/YYYY only when DD.MM is impossible (month > 12)
 
 ### Gotchas
 

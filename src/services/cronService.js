@@ -214,7 +214,6 @@ class CronService {
         hour: '2-digit',
         minute: '2-digit'
       });
-      const today = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
       // Получаем расписание на сегодня
       const schedule = await this.sheetsService.getTodaySchedule();
