@@ -39,7 +39,7 @@ All bot logic (commands, callbacks, location handling) lives in `src/index.js`. 
 - `src/services/locationService.js` — Haversine distance check against store coordinates
 - `src/services/cronService.js` — Scheduled reminders, escalation (evening, hourly, and problem checks)
 - `src/services/dailyReport.js` — Daily report generation (shared between cron and `/report` command)
-- `src/utils/dateUtils.js` — Deterministic date formatting (`formatDateNSK` via `formatToParts`) and robust comparison (`dateMatchesRef`)
+- `src/utils/dateUtils.js` — Deterministic date formatting (`formatDateNSK` via `formatToParts`), robust comparison (`dateMatchesRef`), and schedule header parsing (`parseSheetDate` for "10.февр." format)
 - `src/services/webhookServer.js` — HTTP server for iiko webhooks + health check
 - `src/services/webhookHandler.js` — Processes iiko PersonalShift events into sheet logs + Telegram notifications
 - `src/config/env.js` — Environment variable validation and parsing (includes `managersGroupId`)
@@ -90,7 +90,23 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 
 **Shift Logs**: `A: Дата | B: Телефон | C: ФИО | D: Начало | E: Конец | F: Часы | G: Ставка | H: К оплате`
 
-**Расписание (Schedule)**: `A: Дата | B: Телефон | C: ФИО | D: Начало | E: Конец | F: Напом. вечер | G: Напом. начало | H: Напом. конец`
+**Расписание (Schedule)** — календарная матрица:
+```
+         | 10.февр. | 11.февр. | 12.февр. | ...
+Администратор | вт     | ср       | чт       | ...    ← секция (пропускается)
+Артем С.  |          | 8:30-21:00 |          | ...    ← сотрудник
+Кенан     | 8:30-21:00 | 8:30-21:00 | ...             ← сотрудник
+Кухня     |          |          |          | ...    ← секция (пропускается)
+```
+- Строка 1: заголовки с датами в формате "10.февр." (сокращённые русские месяцы)
+- Столбец A: ФИО сотрудника (полное, как в листе Сотрудники) или название секции
+- Ячейки: "8:30-21:00" — время смены, пустые = выходной
+- Секции (строки без смен в формате время-время) автоматически пропускаются
+
+**Напоминания (Reminders)**: `A: Дата | B: ФИО | C: Тип (evening/start/end)`
+- Отдельный лист для трекинга отправленных напоминаний
+- Каждая отправка добавляет новую строку
+- Используется вместо флагов в расписании (матричный формат не поддерживает per-cell флаги)
 
 ### Key Patterns
 
@@ -101,7 +117,8 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 - **Managers group**: `MANAGERS_GROUP_ID` configured in `config/env.js` as `managersGroupId` (env var `MANAGERS_GROUP_ID`, default `-5237107467`). Used by `dailyReport.js`, `cronService.js`, and `testSystem.js`
 - **Startup order**: Webhook server starts first (for Railway health checks on `PORT`), then bot launches with retry logic (up to 10 attempts, handles 409 Conflict)
 - **Graceful shutdown**: SIGINT/SIGTERM handlers stop webhook server and bot
-- **All dates/times use NSK timezone**: Date writes use `formatDateNSK()` (from `src/utils/dateUtils.js`) via `Intl.DateTimeFormat.formatToParts` for deterministic DD.MM.YYYY output regardless of server locale. Date comparisons use `dateMatchesRef()` which handles DD.MM.YYYY and falls back to MM/DD/YYYY only when DD.MM is impossible (month > 12)
+- **All dates/times use NSK timezone**: Date writes use `formatDateNSK()` (from `src/utils/dateUtils.js`) via `Intl.DateTimeFormat.formatToParts` for deterministic DD.MM.YYYY output regardless of server locale. Date comparisons use `dateMatchesRef()` which handles DD.MM.YYYY and falls back to MM/DD/YYYY only when DD.MM is impossible (month > 12). Schedule header dates ("10.февр.") are parsed by `parseSheetDate()` with Russian month abbreviation mapping
+- **Schedule reminder tracking**: Reminders are tracked in a separate "Напоминания" sheet (not in-cell flags), using `markReminderSent(dateStr, name, type)` and `isReminderSent()` in `googleSheetsService.js`. Employee lookup for schedule uses `findEmployeeByName()` instead of phone-based matching
 
 ### Gotchas
 

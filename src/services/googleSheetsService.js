@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { formatDateNSK, getDatePartsNSK, dateMatchesRef } = require('../utils/dateUtils');
+const { formatDateNSK, getDatePartsNSK, dateMatchesRef, parseSheetDate, datePartsEqual } = require('../utils/dateUtils');
 
 /**
  * Сервис для работы с Google Sheets API
@@ -252,36 +252,218 @@ class GoogleSheetsService {
     })).filter(emp => emp.full_name); // Только с заполненным ФИО
   }
 
-  // ==================== МЕТОДЫ ДЛЯ РАСПИСАНИЯ ====================
-  // Структура: A: Дата | B: Телефон | C: ФИО | D: Начало | E: Конец | F: Напом. вечер | G: Напом. начало | H: Напом. конец
+  /**
+   * Найти сотрудника по ФИО (точное совпадение, fallback — вхождение подстроки)
+   * @param {string} name - ФИО из расписания
+   * @returns {Object|null} - Объект сотрудника или null
+   */
+  async findEmployeeByName(name) {
+    if (!name) return null;
+    const rows = await this.getSheetData('Сотрудники!A2:G');
+    const nameLower = name.trim().toLowerCase();
+
+    // Точное совпадение
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const fullName = (row[1] || '').trim();
+      if (fullName.toLowerCase() === nameLower) {
+        return {
+          phone: row[0] || '',
+          full_name: fullName,
+          username: row[2] || '',
+          position: row[3] || '',
+          hourly_rate: parseFloat(row[4]) || 0,
+          telegram_id: row[5] || null,
+          iiko_id: row[6] || null,
+          rowIndex: i + 2
+        };
+      }
+    }
+
+    // Fallback: вхождение подстроки
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const fullName = (row[1] || '').trim();
+      if (fullName.toLowerCase().includes(nameLower) || nameLower.includes(fullName.toLowerCase())) {
+        return {
+          phone: row[0] || '',
+          full_name: fullName,
+          username: row[2] || '',
+          position: row[3] || '',
+          hourly_rate: parseFloat(row[4]) || 0,
+          telegram_id: row[5] || null,
+          iiko_id: row[6] || null,
+          rowIndex: i + 2
+        };
+      }
+    }
+
+    return null;
+  }
+
+  // ==================== МЕТОДЫ ДЛЯ РАСПИСАНИЯ (МАТРИЧНЫЙ ФОРМАТ) ====================
+  //
+  // Лист "Расписание" — календарная матрица:
+  //   Строка 1: пусто | 10.февр. | 11.февр. | ...
+  //   Строки 2+: ФИО   | 8:30-21:00 | ...
+  //   Секции ("Администратор", "Кухня") — строки без смен, пропускаются.
+  //
+  // Лист "Напоминания":
+  //   A: Дата | B: ФИО | C: Тип (evening/start/end)
 
   /**
-   * Получить расписание на конкретную дату
-   * @param {Date} refDate - Объект Date для сравнения
-   * @returns {Array} - Массив смен на указанную дату
+   * Прочитать матричное расписание и вернуть структурированные данные.
+   *
+   * @returns {{ dates: Array<{col: number, day: number, month: number, year: number}>, employees: Array<{name: string, shifts: Object}> }}
+   */
+  async getScheduleMatrix() {
+    const rows = await this.getSheetData('Расписание');
+
+    if (!rows || rows.length === 0) {
+      return { dates: [], employees: [] };
+    }
+
+    // Строка 1: заголовки с датами (столбец 0 = пусто / "ФИО")
+    const headerRow = rows[0];
+    const dates = [];
+    for (let col = 1; col < headerRow.length; col++) {
+      const parsed = parseSheetDate(headerRow[col]);
+      if (parsed) {
+        dates.push({ col, ...parsed });
+      }
+    }
+
+    // Строки 2+: сотрудники и их смены
+    const employees = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const name = (row[0] || '').trim();
+      if (!name) continue;
+
+      // Проверяем, есть ли хоть одна смена в строке (иначе это секция)
+      let hasShift = false;
+      const shifts = {};
+
+      for (const d of dates) {
+        const cell = (row[d.col] || '').trim();
+        if (!cell) continue;
+
+        // Парсим "8:30-21:00"
+        const timeMatch = cell.match(/^(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})$/);
+        if (timeMatch) {
+          hasShift = true;
+          const key = `${d.day}.${d.month}.${d.year}`;
+          shifts[key] = { start: timeMatch[1], end: timeMatch[2] };
+        }
+      }
+
+      if (hasShift) {
+        employees.push({ name, shifts });
+      }
+    }
+
+    return { dates, employees };
+  }
+
+  /**
+   * Получить все напоминания за конкретную дату из листа "Напоминания".
+   * @param {string} dateStr - Дата в формате DD.MM.YYYY
+   * @returns {Array<{name: string, type: string}>}
+   */
+  async getRemindersForDate(dateStr) {
+    try {
+      const rows = await this.getSheetData('Напоминания!A2:C');
+      return rows
+        .filter(row => (row[0] || '').trim() === dateStr)
+        .map(row => ({ name: (row[1] || '').trim(), type: (row[2] || '').trim() }));
+    } catch (error) {
+      // Если лист не существует — возвращаем пустой массив
+      if (error.message && error.message.includes('Unable to parse range')) {
+        console.log('⚠️ Лист "Напоминания" не найден, создайте его вручную');
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Проверить, отправлено ли напоминание.
+   * @param {string} dateStr - Дата "DD.MM.YYYY"
+   * @param {string} name - ФИО сотрудника
+   * @param {string} type - Тип: 'evening' | 'start' | 'end'
+   * @param {Array} [cachedReminders] - Кешированные напоминания (чтобы не читать лист повторно)
+   * @returns {boolean}
+   */
+  isReminderSent(dateStr, name, type, cachedReminders) {
+    if (!cachedReminders) return false;
+    return cachedReminders.some(
+      r => r.name.toLowerCase() === name.toLowerCase() && r.type === type
+    );
+  }
+
+  /**
+   * Пометить напоминание как отправленное (добавить строку в лист "Напоминания").
+   * @param {string} dateStr - Дата "DD.MM.YYYY"
+   * @param {string} name - ФИО сотрудника
+   * @param {string} type - Тип: 'evening' | 'start' | 'end'
+   */
+  async markReminderSent(dateStr, name, type) {
+    try {
+      await this.appendSheetData('Напоминания!A:C', [dateStr, name, type]);
+      console.log(`✅ Напоминание ${type} помечено для ${name} на ${dateStr}`);
+    } catch (error) {
+      console.error(`❌ Ошибка записи напоминания:`, error.message);
+    }
+  }
+
+  /**
+   * Получить расписание на конкретную дату (совместимый формат для cronService).
+   * @param {Date} refDate - Объект Date
+   * @returns {Array} - Массив смен [{full_name, start_time, end_time, phone, reminder_*_sent}]
    */
   async getScheduleForDate(refDate) {
-    const rows = await this.getSheetData('Расписание!A2:H');
+    const matrix = await this.getScheduleMatrix();
     const refParts = getDatePartsNSK(refDate);
 
-    return rows
-      .map((row, i) => ({
-        date: row[0] || '',
-        phone: row[1] || '',
-        full_name: row[2] || '',
-        start_time: row[3] || '',
-        end_time: row[4] || '',
-        reminder_evening_sent: (row[5] || '').toLowerCase() === 'да',
-        reminder_start_sent: (row[6] || '').toLowerCase() === 'да',
-        reminder_end_sent: (row[7] || '').toLowerCase() === 'да',
-        rowIndex: i + 2
-      }))
-      .filter(shift => dateMatchesRef(shift.date, refParts) && shift.phone);
+    // Ищем столбец с нужной датой
+    const dateCol = matrix.dates.find(d =>
+      d.day === refParts.day && d.month === refParts.month && d.year === refParts.year
+    );
+    if (!dateCol) return [];
+
+    const dateKey = `${refParts.day}.${refParts.month}.${refParts.year}`;
+    const dateStr = formatDateNSK(refDate);
+
+    // Читаем напоминания один раз
+    const reminders = await this.getRemindersForDate(dateStr);
+
+    const result = [];
+    for (const emp of matrix.employees) {
+      const shift = emp.shifts[dateKey];
+      if (!shift) continue;
+
+      // Ищем сотрудника для получения телефона и telegram_id
+      const employee = await this.findEmployeeByName(emp.name);
+
+      result.push({
+        full_name: emp.name,
+        start_time: shift.start,
+        end_time: shift.end,
+        date: dateStr,
+        phone: employee ? employee.phone : '',
+        telegram_id: employee ? employee.telegram_id : null,
+        reminder_evening_sent: this.isReminderSent(dateStr, emp.name, 'evening', reminders),
+        reminder_start_sent: this.isReminderSent(dateStr, emp.name, 'start', reminders),
+        reminder_end_sent: this.isReminderSent(dateStr, emp.name, 'end', reminders)
+      });
+    }
+
+    return result;
   }
 
   /**
    * Получить расписание на завтра
-   * @returns {Array} - Массив смен на завтра
+   * @returns {Array}
    */
   async getTomorrowSchedule() {
     const tomorrow = new Date();
@@ -290,15 +472,21 @@ class GoogleSheetsService {
   }
 
   /**
+   * Получить расписание на сегодня
+   * @returns {Array}
+   */
+  async getTodaySchedule() {
+    return this.getScheduleForDate(new Date());
+  }
+
+  /**
    * Получить смены, которые начинаются через час (±5 минут)
-   * @returns {Array} - Массив смен
+   * @returns {Array}
    */
   async getShiftsStartingInOneHour() {
     const now = new Date();
-
     const shifts = await this.getScheduleForDate(now);
 
-    // Текущее время в Новосибирске
     const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
     const [nskHours, nskMinutes] = nskTime.split(':').map(Number);
     const currentMinutes = nskHours * 60 + nskMinutes;
@@ -327,14 +515,12 @@ class GoogleSheetsService {
 
   /**
    * Получить смены, которые заканчиваются через час (±5 минут)
-   * @returns {Array} - Массив смен
+   * @returns {Array}
    */
   async getShiftsEndingInOneHour() {
     const now = new Date();
-
     const shifts = await this.getScheduleForDate(now);
 
-    // Текущее время в Новосибирске
     const nskTime = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit', hour12: false });
     const [nskHours, nskMinutes] = nskTime.split(':').map(Number);
     const currentMinutes = nskHours * 60 + nskMinutes;
@@ -359,33 +545,6 @@ class GoogleSheetsService {
       }
       return false;
     });
-  }
-
-  /**
-   * Пометить напоминание как отправленное
-   * @param {number} rowIndex - Номер строки в таблице
-   * @param {string} reminderType - Тип напоминания: 'evening' | 'start' | 'end'
-   */
-  async markReminderSent(rowIndex, reminderType) {
-    const columnMap = {
-      evening: 'F',
-      start: 'G',
-      end: 'H'
-    };
-
-    const column = columnMap[reminderType];
-    if (!column) {
-      throw new Error(`Неизвестный тип напоминания: ${reminderType}`);
-    }
-
-    await this.sheets.spreadsheets.values.update({
-      spreadsheetId: this.spreadsheetId,
-      range: `Расписание!${column}${rowIndex}`,
-      valueInputOption: 'USER_ENTERED',
-      resource: { values: [['да']] }
-    });
-
-    console.log(`✅ Напоминание ${reminderType} помечено как отправленное (строка ${rowIndex})`);
   }
 
   // ==================== МЕТОДЫ ДЛЯ SHIFT LOGS ====================
@@ -524,26 +683,6 @@ class GoogleSheetsService {
         hours_worked: parseFloat(row[5]) || 0,
         hourly_rate: parseFloat(row[6]) || 0,
         total_payment: parseFloat(row[7]) || 0
-      }));
-  }
-
-  /**
-   * Получить расписание на сегодня
-   * @returns {Array} - Массив смен с данными о времени
-   */
-  async getTodaySchedule() {
-    const rows = await this.getSheetData('Расписание!A2:H');
-    const todayParts = getDatePartsNSK();
-
-    return rows
-      .filter(row => dateMatchesRef(row[0], todayParts))
-      .map((row, index) => ({
-        rowIndex: index + 2,
-        date: row[0],
-        phone: row[1],
-        full_name: row[2],
-        start_time: row[3],
-        end_time: row[4]
       }));
   }
 

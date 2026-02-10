@@ -56,11 +56,8 @@ class CronService {
           continue;
         }
 
-        // Ищем telegram_id сотрудника по телефону
-        const employee = await this.sheetsService.findEmployeeByPhone(shift.phone);
-
-        if (!employee || !employee.telegram_id) {
-          console.log(`⚠️ Не найден telegram_id для ${shift.full_name} (${shift.phone})`);
+        if (!shift.telegram_id) {
+          console.log(`⚠️ Не найден telegram_id для ${shift.full_name}`);
           continue;
         }
 
@@ -73,8 +70,8 @@ class CronService {
           `Хорошего рабочего дня!`;
 
         try {
-          await this.bot.telegram.sendMessage(employee.telegram_id, message);
-          await this.sheetsService.markReminderSent(shift.rowIndex, 'evening');
+          await this.bot.telegram.sendMessage(shift.telegram_id, message);
+          await this.sheetsService.markReminderSent(shift.date, shift.full_name, 'evening');
           console.log(`✅ Вечернее напоминание отправлено: ${shift.full_name}`);
         } catch (sendError) {
           console.error(`❌ Ошибка отправки вечернего напоминания ${shift.full_name}:`, sendError.message);
@@ -107,10 +104,8 @@ class CronService {
       let sent = 0, skipped = 0, failed = 0;
 
       for (const shift of shifts) {
-        const employee = await this.sheetsService.findEmployeeByPhone(shift.phone);
-
-        if (!employee || !employee.telegram_id) {
-          console.log(`⚠️ [StartReminder] Нет telegram_id: ${shift.full_name} (тел: ${shift.phone})`);
+        if (!shift.telegram_id) {
+          console.log(`⚠️ [StartReminder] Нет telegram_id: ${shift.full_name}`);
           skipped++;
           continue;
         }
@@ -122,18 +117,18 @@ class CronService {
           `Не забудь открыть смену в боте!`;
 
         try {
-          await this.bot.telegram.sendMessage(employee.telegram_id, message, {
+          await this.bot.telegram.sendMessage(shift.telegram_id, message, {
             reply_markup: {
               inline_keyboard: [
                 [{ text: '📥 Открыть смену', callback_data: 'open_shift' }]
               ]
             }
           });
-          await this.sheetsService.markReminderSent(shift.rowIndex, 'start');
-          console.log(`✅ [StartReminder] Отправлено: ${shift.full_name} (tg: ${employee.telegram_id})`);
+          await this.sheetsService.markReminderSent(shift.date, shift.full_name, 'start');
+          console.log(`✅ [StartReminder] Отправлено: ${shift.full_name} (tg: ${shift.telegram_id})`);
           sent++;
         } catch (sendError) {
-          console.error(`❌ [StartReminder] Ошибка отправки ${shift.full_name} (tg: ${employee.telegram_id}): ${sendError.message}`);
+          console.error(`❌ [StartReminder] Ошибка отправки ${shift.full_name} (tg: ${shift.telegram_id}): ${sendError.message}`);
           if (sendError.response) {
             console.error(`❌ [StartReminder] Telegram API: ${sendError.response.error_code} — ${sendError.response.description}`);
           }
@@ -160,10 +155,8 @@ class CronService {
       let sent = 0, skipped = 0, failed = 0;
 
       for (const shift of shifts) {
-        const employee = await this.sheetsService.findEmployeeByPhone(shift.phone);
-
-        if (!employee || !employee.telegram_id) {
-          console.log(`⚠️ [EndReminder] Нет telegram_id: ${shift.full_name} (тел: ${shift.phone})`);
+        if (!shift.telegram_id) {
+          console.log(`⚠️ [EndReminder] Нет telegram_id: ${shift.full_name}`);
           skipped++;
           continue;
         }
@@ -174,18 +167,18 @@ class CronService {
           `Время окончания: ${shift.end_time}`;
 
         try {
-          await this.bot.telegram.sendMessage(employee.telegram_id, message, {
+          await this.bot.telegram.sendMessage(shift.telegram_id, message, {
             reply_markup: {
               inline_keyboard: [
                 [{ text: '📤 Закрыть смену', callback_data: 'close_shift' }]
               ]
             }
           });
-          await this.sheetsService.markReminderSent(shift.rowIndex, 'end');
-          console.log(`✅ [EndReminder] Отправлено: ${shift.full_name} (tg: ${employee.telegram_id})`);
+          await this.sheetsService.markReminderSent(shift.date, shift.full_name, 'end');
+          console.log(`✅ [EndReminder] Отправлено: ${shift.full_name} (tg: ${shift.telegram_id})`);
           sent++;
         } catch (sendError) {
-          console.error(`❌ [EndReminder] Ошибка отправки ${shift.full_name} (tg: ${employee.telegram_id}): ${sendError.message}`);
+          console.error(`❌ [EndReminder] Ошибка отправки ${shift.full_name} (tg: ${shift.telegram_id}): ${sendError.message}`);
           if (sendError.response) {
             console.error(`❌ [EndReminder] Telegram API: ${sendError.response.error_code} — ${sendError.response.description}`);
           }
@@ -248,6 +241,8 @@ class CronService {
       const schedule = await this.sheetsService.getTodaySchedule();
 
       for (const shift of schedule) {
+        if (!shift.start_time || !shift.phone) continue;
+
         // Парсим время начала смены
         const [startHour, startMin] = shift.start_time.split(':').map(Number);
         const [nowHour, nowMin] = currentTime.split(':').map(Number);

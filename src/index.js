@@ -395,9 +395,13 @@ bot.command('test_reminder', async (ctx) => {
     const endShifts = await sheetsService.getShiftsEndingInOneHour();
     const todaySchedule = await sheetsService.getTodaySchedule();
 
+    const scheduleDetails = todaySchedule.length > 0
+      ? todaySchedule.map(s => `  • ${s.full_name}: ${s.start_time}—${s.end_time}`).join('\n')
+      : '  (пусто)';
+
     await ctx.reply(
       `✅ Тестовое оповещение отправлено!\n\n` +
-      `📋 Расписание на сегодня: ${todaySchedule.length} смен\n` +
+      `📋 Расписание на сегодня (${todaySchedule.length}):\n${scheduleDetails}\n\n` +
       `🔔 Начинаются через час: ${startShifts.length}\n` +
       `🔔 Заканчиваются через час: ${endShifts.length}`
     );
