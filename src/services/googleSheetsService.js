@@ -303,16 +303,25 @@ class GoogleSheetsService {
     const [nskHours, nskMinutes] = nskTime.split(':').map(Number);
     const currentMinutes = nskHours * 60 + nskMinutes;
 
+    console.log(`🕐 [StartCheck] Время NSK: ${nskTime}, расписание: ${shifts.length} смен, ищем начало в ~${Math.floor((currentMinutes + 60) / 60)}:${String((currentMinutes + 60) % 60).padStart(2, '0')}`);
+
     return shifts.filter(shift => {
-      if (!shift.start_time || shift.reminder_start_sent) return false;
+      if (!shift.start_time) return false;
+      if (shift.reminder_start_sent) {
+        console.log(`   ⏭️ ${shift.full_name}: напоминание уже отправлено`);
+        return false;
+      }
 
       const [shiftHours, shiftMinutes] = shift.start_time.split(':').map(Number);
       const shiftStartMinutes = shiftHours * 60 + shiftMinutes;
+      const targetMinutes = currentMinutes + 60;
+      const diff = Math.abs(shiftStartMinutes - targetMinutes);
 
-      const targetMinutes = currentMinutes + 60; // Через час
-
-      // Допуск ±5 минут
-      return Math.abs(shiftStartMinutes - targetMinutes) <= 5;
+      if (diff <= 5) {
+        console.log(`   ✅ ${shift.full_name}: начало ${shift.start_time}, разница ${diff} мин — ПОПАДАЕТ в окно`);
+        return true;
+      }
+      return false;
     });
   }
 
@@ -330,16 +339,25 @@ class GoogleSheetsService {
     const [nskHours, nskMinutes] = nskTime.split(':').map(Number);
     const currentMinutes = nskHours * 60 + nskMinutes;
 
+    console.log(`🕐 [EndCheck] Время NSK: ${nskTime}, расписание: ${shifts.length} смен, ищем конец в ~${Math.floor((currentMinutes + 60) / 60)}:${String((currentMinutes + 60) % 60).padStart(2, '0')}`);
+
     return shifts.filter(shift => {
-      if (!shift.end_time || shift.reminder_end_sent) return false;
+      if (!shift.end_time) return false;
+      if (shift.reminder_end_sent) {
+        console.log(`   ⏭️ ${shift.full_name}: напоминание уже отправлено`);
+        return false;
+      }
 
       const [shiftHours, shiftMinutes] = shift.end_time.split(':').map(Number);
       const shiftEndMinutes = shiftHours * 60 + shiftMinutes;
+      const targetMinutes = currentMinutes + 60;
+      const diff = Math.abs(shiftEndMinutes - targetMinutes);
 
-      const targetMinutes = currentMinutes + 60; // Через час
-
-      // Допуск ±5 минут
-      return Math.abs(shiftEndMinutes - targetMinutes) <= 5;
+      if (diff <= 5) {
+        console.log(`   ✅ ${shift.full_name}: конец ${shift.end_time}, разница ${diff} мин — ПОПАДАЕТ в окно`);
+        return true;
+      }
+      return false;
     });
   }
 

@@ -89,6 +89,9 @@ class CronService {
    * Отправить напоминания "за час до начала" и "за час до окончания"
    */
   async sendHourlyReminders() {
+    const now = new Date();
+    const timeNSK = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit' });
+    console.log(`🔄 [Reminders] Проверка напоминаний в ${timeNSK} NSK`);
     await this.sendStartReminders();
     await this.sendEndReminders();
   }
@@ -99,12 +102,16 @@ class CronService {
   async sendStartReminders() {
     try {
       const shifts = await this.sheetsService.getShiftsStartingInOneHour();
+      console.log(`🔔 [StartReminder] Найдено ${shifts.length} смен, начинающихся через час`);
+
+      let sent = 0, skipped = 0, failed = 0;
 
       for (const shift of shifts) {
         const employee = await this.sheetsService.findEmployeeByPhone(shift.phone);
 
         if (!employee || !employee.telegram_id) {
-          console.log(`⚠️ Не найден telegram_id для ${shift.full_name} (${shift.phone})`);
+          console.log(`⚠️ [StartReminder] Нет telegram_id: ${shift.full_name} (тел: ${shift.phone})`);
+          skipped++;
           continue;
         }
 
@@ -123,13 +130,22 @@ class CronService {
             }
           });
           await this.sheetsService.markReminderSent(shift.rowIndex, 'start');
-          console.log(`✅ Напоминание о начале отправлено: ${shift.full_name}`);
+          console.log(`✅ [StartReminder] Отправлено: ${shift.full_name} (tg: ${employee.telegram_id})`);
+          sent++;
         } catch (sendError) {
-          console.error(`❌ Ошибка отправки напоминания о начале ${shift.full_name}:`, sendError.message);
+          console.error(`❌ [StartReminder] Ошибка отправки ${shift.full_name} (tg: ${employee.telegram_id}): ${sendError.message}`);
+          if (sendError.response) {
+            console.error(`❌ [StartReminder] Telegram API: ${sendError.response.error_code} — ${sendError.response.description}`);
+          }
+          failed++;
         }
       }
+
+      if (shifts.length > 0) {
+        console.log(`📊 [StartReminder] Итого: отправлено ${sent}, пропущено ${skipped}, ошибок ${failed}`);
+      }
     } catch (error) {
-      console.error('❌ Ошибка в sendStartReminders:', error);
+      console.error('❌ [StartReminder] Критическая ошибка:', error.message);
     }
   }
 
@@ -139,12 +155,16 @@ class CronService {
   async sendEndReminders() {
     try {
       const shifts = await this.sheetsService.getShiftsEndingInOneHour();
+      console.log(`🔔 [EndReminder] Найдено ${shifts.length} смен, заканчивающихся через час`);
+
+      let sent = 0, skipped = 0, failed = 0;
 
       for (const shift of shifts) {
         const employee = await this.sheetsService.findEmployeeByPhone(shift.phone);
 
         if (!employee || !employee.telegram_id) {
-          console.log(`⚠️ Не найден telegram_id для ${shift.full_name} (${shift.phone})`);
+          console.log(`⚠️ [EndReminder] Нет telegram_id: ${shift.full_name} (тел: ${shift.phone})`);
+          skipped++;
           continue;
         }
 
@@ -162,13 +182,22 @@ class CronService {
             }
           });
           await this.sheetsService.markReminderSent(shift.rowIndex, 'end');
-          console.log(`✅ Напоминание об окончании отправлено: ${shift.full_name}`);
+          console.log(`✅ [EndReminder] Отправлено: ${shift.full_name} (tg: ${employee.telegram_id})`);
+          sent++;
         } catch (sendError) {
-          console.error(`❌ Ошибка отправки напоминания об окончании ${shift.full_name}:`, sendError.message);
+          console.error(`❌ [EndReminder] Ошибка отправки ${shift.full_name} (tg: ${employee.telegram_id}): ${sendError.message}`);
+          if (sendError.response) {
+            console.error(`❌ [EndReminder] Telegram API: ${sendError.response.error_code} — ${sendError.response.description}`);
+          }
+          failed++;
         }
       }
+
+      if (shifts.length > 0) {
+        console.log(`📊 [EndReminder] Итого: отправлено ${sent}, пропущено ${skipped}, ошибок ${failed}`);
+      }
     } catch (error) {
-      console.error('❌ Ошибка в sendEndReminders:', error);
+      console.error('❌ [EndReminder] Критическая ошибка:', error.message);
     }
   }
 
