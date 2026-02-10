@@ -1,5 +1,6 @@
 /**
  * Тестовый скрипт для отправки ежедневного отчёта
+ * Вызывает ту же функцию, что и cron в index.js
  * Запуск: node scripts/testDailyReport.js
  */
 
@@ -7,7 +8,7 @@ require('dotenv').config();
 
 const bot = require('../src/bot');
 const GoogleSheetsService = require('../src/services/googleSheetsService');
-const CronService = require('../src/services/cronService');
+const { sendDailyReport } = require('../src/services/dailyReport');
 
 async function main() {
   console.log('🧪 Тестовая отправка ежедневного отчёта...\n');
@@ -17,9 +18,7 @@ async function main() {
     process.env.GOOGLE_SHEET_ID
   );
 
-  const cronService = new CronService(bot, sheetsService);
-
-  await cronService.sendDailyReport();
+  await sendDailyReport(bot, sheetsService);
 
   console.log('\n✅ Тест завершён');
   process.exit(0);

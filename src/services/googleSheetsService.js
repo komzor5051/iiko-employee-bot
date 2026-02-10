@@ -119,7 +119,7 @@ class GoogleSheetsService {
    * @returns {Object|null} - Объект сотрудника или null
    */
   async findEmployeeByPhone(phone) {
-    const rows = await this.getSheetData('Сотрудники!A2:G1000');
+    const rows = await this.getSheetData('Сотрудники!A2:G');
     const normalizedInput = this.normalizePhone(phone);
 
     for (let i = 0; i < rows.length; i++) {
@@ -150,7 +150,7 @@ class GoogleSheetsService {
    * @returns {Object|null} - Объект сотрудника или null
    */
   async findEmployeeByTelegramId(telegramId) {
-    const rows = await this.getSheetData('Сотрудники!A2:G1000');
+    const rows = await this.getSheetData('Сотрудники!A2:G');
     const telegramIdStr = String(telegramId);
 
     for (let i = 0; i < rows.length; i++) {
@@ -178,7 +178,7 @@ class GoogleSheetsService {
    * @returns {Object|null} - Объект сотрудника или null
    */
   async findEmployeeByIikoId(iikoId) {
-    const rows = await this.getSheetData('Сотрудники!A2:G1000');
+    const rows = await this.getSheetData('Сотрудники!A2:G');
     const iikoIdStr = String(iikoId);
 
     for (let i = 0; i < rows.length; i++) {
@@ -237,7 +237,7 @@ class GoogleSheetsService {
    * @returns {Array} - Массив сотрудников с rowIndex
    */
   async getAllEmployees() {
-    const rows = await this.getSheetData('Сотрудники!A2:G1000');
+    const rows = await this.getSheetData('Сотрудники!A2:G');
 
     return rows.map((row, i) => ({
       phone: row[0] || '',
@@ -260,7 +260,7 @@ class GoogleSheetsService {
    * @returns {Array} - Массив смен на указанную дату
    */
   async getScheduleForDate(dateStr) {
-    const rows = await this.getSheetData('Расписание!A2:H1000');
+    const rows = await this.getSheetData('Расписание!A2:H');
 
     return rows
       .map((row, i) => ({
@@ -407,7 +407,7 @@ class GoogleSheetsService {
    * @returns {Object|null} - Активная смена или null
    */
   async getActiveShift(phone) {
-    const rows = await this.getSheetData('Shift Logs!A2:H1000');
+    const rows = await this.getSheetData('Shift Logs!A2:H');
     const normalizedPhone = this.normalizePhone(phone);
 
     // Ищем последнюю строку для этого пользователя без end_time
@@ -493,7 +493,7 @@ class GoogleSheetsService {
    * @returns {Array} - Массив смен с данными
    */
   async getTodayShiftLogs() {
-    const rows = await this.getSheetData('Shift Logs!A2:H1000');
+    const rows = await this.getSheetData('Shift Logs!A2:H');
     // Используем Asia/Novosibirsk для правильной даты на сервере
     const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' }); // ДД.ММ.ГГГГ
 
@@ -516,7 +516,7 @@ class GoogleSheetsService {
    * @returns {Array} - Массив смен с данными о времени
    */
   async getTodaySchedule() {
-    const rows = await this.getSheetData('Расписание!A2:H1000');
+    const rows = await this.getSheetData('Расписание!A2:H');
     const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
     return rows
@@ -536,7 +536,7 @@ class GoogleSheetsService {
    * @returns {Array} - Массив активных смен
    */
   async getAllActiveShifts() {
-    const rows = await this.getSheetData('Shift Logs!A2:H1000');
+    const rows = await this.getSheetData('Shift Logs!A2:H');
     const today = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
 
     return rows

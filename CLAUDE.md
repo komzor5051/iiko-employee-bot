@@ -17,12 +17,31 @@ npm run setup-webhook              # Configure iiko webhook (requires WEBHOOK_UR
 npm run init-schedule              # Initialize schedule sheet structure
 node scripts/testSystem.js         # Full system test (Google Sheets, iiko API, Telegram, escalation)
 node scripts/testDailyReport.js    # Test daily report generation
+node scripts/syncShifts.js         # Probe iiko API endpoints and check active shifts
 pm2 start ecosystem.config.js      # Production with PM2
 ```
 
 ## Architecture
 
-Most bot logic (commands, callbacks, location handling) lives in `src/index.js` as a monolith. The `src/handlers/` directory has modular files (registration.js, shift.js, admin.js) but they are not wired up — `index.js` handles everything directly.
+### Monolith in index.js
+
+All bot logic (commands, callbacks, location handling) lives in `src/index.js`. The service layer is in `src/services/`.
+
+**Dead code directories** — these files exist but are **not wired up** (stubs from original plan in `TODO.md`):
+- `src/handlers/` — `registration.js`, `shift.js`, `admin.js` (all logic is in `index.js`)
+- `src/utils/` — `constants.js`, `messages.js`, `keyboards.js` (empty stubs)
+- `src/middleware/auth.js` — never imported (auth is inline in `index.js`)
+
+**Active service layer**:
+- `src/bot.js` — Telegraf instance with logger and error handler middleware
+- `src/services/googleSheetsService.js` — Google Sheets CRUD, employee lookup, shift logging, schedule queries
+- `src/services/iikoService.js` — iiko Cloud API with token management and retry logic
+- `src/services/locationService.js` — Haversine distance check against store coordinates
+- `src/services/cronService.js` — Scheduled reminders, escalation (evening, hourly, and problem checks)
+- `src/services/dailyReport.js` — Daily report generation with date normalization (shared between cron and `/report` command)
+- `src/services/webhookServer.js` — HTTP server for iiko webhooks + health check
+- `src/services/webhookHandler.js` — Processes iiko PersonalShift events into sheet logs + Telegram notifications
+- `src/config/env.js` — Environment variable validation and parsing (includes `managersGroupId`)
 
 ### Data Flow
 
@@ -32,6 +51,16 @@ Most bot logic (commands, callbacks, location handling) lives in `src/index.js` 
 4. On valid location → shift logged to `Shift Logs` sheet and optionally synced to iiko API
 5. Bot uses inline keyboards (`Markup.inlineKeyboard`) for main UI, reply keyboards only for contact/location requests
 
+### iiko Cloud API Endpoints
+
+The bot uses iiko Cloud API (`api-ru.iiko.services`):
+- `POST /api/1/access_token` — get Bearer token (1h lifetime)
+- `POST /api/1/employees/shift/clockin` — open employee shift
+- `POST /api/1/employees/shift/clockout` — close employee shift
+- `POST /api/1/employees/couriers` — list employees (used by `syncIikoIds.js` script)
+- `POST /api/1/webhooks/settings` — get webhook config
+- `POST /api/1/webhooks/update_settings` — update webhook config
+
 ### iiko Webhook Flow (reverse sync)
 
 1. Employee opens/closes shift in iiko terminal
@@ -39,17 +68,20 @@ Most bot logic (commands, callbacks, location handling) lives in `src/index.js` 
 3. `webhookServer.js` validates `Authorization` header (handles both `Bearer TOKEN` and bare `TOKEN` formats)
 4. `webhookHandler.js` finds employee by `iiko_id` in Google Sheets
 5. Shift is logged to `Shift Logs` and notification sent to employee via Telegram
+6. Duplicate protection: if shift already open/closed in sheets, the webhook event is skipped
 
 ### Cron Jobs (Asia/Novosibirsk)
 
 All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expressions are in NSK time.
 
-| NSK Time | Cron | Job |
-|----------|------|-----|
-| 20:00 | `0 20 * * *` | Evening reminders for tomorrow's shifts |
-| 22:30 | `30 22 * * *` | Daily report to managers group |
-| Every 5 min | `*/5 * * * *` | Check for "1 hour before start/end" reminders |
-| Every 15 min | `*/15 * * * *` | Escalation check (late starts >15min, shifts >12h) |
+| NSK Time | Cron | Location | Job |
+|----------|------|----------|-----|
+| 20:00 | `0 20 * * *` | `cronService.js` | Evening reminders for tomorrow's shifts |
+| 22:30 | `30 22 * * *` | **`index.js` (top-level)** | Daily report to managers group |
+| Every 5 min | `*/5 * * * *` | `cronService.js` | Check for "1 hour before start/end" reminders |
+| Every 15 min | `*/15 * * * *` | `cronService.js` | Escalation check (late starts >15min, shifts >12h) |
+
+**Daily report architecture**: The 22:30 report is registered as a top-level `cron.schedule()` in `index.js`, calling `sendDailyReport()` from `src/services/dailyReport.js`. It uses `normalizeDate()` to handle Google Sheets date format mismatches (leading zeros, `/` vs `.`), and reports both closed and still-open shifts. Can be triggered manually via `/report` command. Test with `node scripts/testDailyReport.js` (calls the same function).
 
 ### Google Sheets Structure
 
@@ -62,12 +94,20 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 ### Key Patterns
 
 - **Telegraf.js v4**: `bot.command()`, `bot.action()`, `bot.on('contact')`, `bot.on('location')`, `Markup` for keyboards
-- **iiko token management**: 1h lifetime, auto-refresh 5min before expiry, retry on 401/429/503 with exponential backoff
-- **Phone normalization**: All phone comparisons use `normalizePhone()` which strips to 10 digits (removes country code 7/8). This is critical for matching — phones in sheets may be in any format.
+- **iiko token management**: 1h lifetime, auto-refresh 5min before expiry, retry on 401/429/503 with exponential backoff (max 3 retries)
+- **Phone normalization**: All phone comparisons use `normalizePhone()` in `googleSheetsService.js` which strips to 10 digits (removes country code 7/8). This is critical for matching — phones in sheets may be in any format.
 - **Location validation**: `pendingLocationChecks` Map in `src/index.js` tracks open/close actions awaiting geolocation (10min timeout, cleaned up every 60s via setInterval)
-- **Managers group**: Hardcoded `MANAGERS_GROUP_ID = -5237107467` in `cronService.js` and `testSystem.js` for escalations and daily reports
+- **Managers group**: `MANAGERS_GROUP_ID` configured in `config/env.js` as `managersGroupId` (env var `MANAGERS_GROUP_ID`, default `-5237107467`). Used by `dailyReport.js`, `cronService.js`, and `testSystem.js`
 - **Startup order**: Webhook server starts first (for Railway health checks on `PORT`), then bot launches with retry logic (up to 10 attempts, handles 409 Conflict)
 - **Graceful shutdown**: SIGINT/SIGTERM handlers stop webhook server and bot
+- **All dates/times use NSK timezone**: `toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' })` pattern throughout
+
+### Gotchas
+
+- `IIKO_WEBHOOK_TOKEN` in `env.js` defaults to `'your-secret-token'` — if env var is missing, webhook auth silently uses this default instead of failing
+- `TODO.md` is the original development plan, not current TODOs — the actual implementation diverged from the plan (monolith instead of modular handlers, different iiko endpoints)
+- Shift duration calculations assume same-day shifts; midnight crossover adds 24h but multi-day shifts are not supported
+- `testSystem.js` still has a hardcoded `MANAGERS_GROUP_ID` — update it if the group changes (or switch to `config.managersGroupId`)
 
 ### Environment Variables
 
@@ -88,6 +128,7 @@ Optional geolocation:
 Optional other:
 - `PORT` — HTTP server port for webhooks (default: 3000)
 - `ADMIN_TELEGRAM_IDS` (comma-separated)
+- `MANAGERS_GROUP_ID` — Telegram group chat ID for reports/escalations (default: -5237107467)
 - `NODE_ENV` (default: development)
 
 ### Deployment (Railway)

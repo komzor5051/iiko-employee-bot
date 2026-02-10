@@ -7,6 +7,8 @@ const locationService = require('./services/locationService');
 const CronService = require('./services/cronService');
 const WebhookServer = require('./services/webhookServer');
 const WebhookHandler = require('./services/webhookHandler');
+const { sendDailyReport } = require('./services/dailyReport');
+const cron = require('node-cron');
 
 console.log('🚀 Запуск бота...');
 console.log(`Environment: ${config.nodeEnv}`);
@@ -346,6 +348,23 @@ bot.command('help', (ctx) => {
   );
 });
 
+// ===== КОМАНДА /report (ручной запуск отчёта) =====
+bot.command('report', async (ctx) => {
+  const telegramId = ctx.from.id;
+
+  if (config.adminIds.length > 0 && !config.adminIds.includes(telegramId)) {
+    return ctx.reply('❌ Только администраторы могут запускать отчёт.');
+  }
+
+  await ctx.reply('📊 Генерирую отчёт...');
+  try {
+    await sendDailyReport(bot, sheetsService);
+    await ctx.reply('✅ Отчёт отправлен в группу руководителей.');
+  } catch (error) {
+    await ctx.reply('❌ Ошибка при генерации отчёта: ' + error.message);
+  }
+});
+
 // ===== КОМАНДА /status =====
 bot.command('status', async (ctx) => {
   const telegramId = ctx.from.id;
@@ -680,6 +699,22 @@ const webhookServer = new WebhookServer((data) => webhookHandler.handle(data));
 // Запуск webhook сервера СРАЗУ (чтобы Railway видел живой сервис)
 webhookServer.start();
 
+// Запуск cron-напоминаний на top-level (не зависит от bot.launch)
+cronService.start();
+console.log('✅ Cron-напоминания запущены');
+
+// Ежедневный отчёт в 22:30 NSK (top-level, как в ШРМ_ЗАКУПКИ и ШРМ_ПЕРЕМЕЩЕНИЯ)
+cron.schedule('30 22 * * *', async () => {
+  console.log('Running daily report cron job...');
+  try {
+    await sendDailyReport(bot, sheetsService);
+    console.log('Daily report cron job completed successfully');
+  } catch (error) {
+    console.error('Daily report cron job failed:', error.message);
+  }
+}, { timezone: 'Asia/Novosibirsk' });
+console.log('📊 Ежедневный отчёт запланирован на 22:30 NSK');
+
 // Функция запуска бота с retry
 async function startBotWithRetry(maxRetries = 10, delayMs = 3000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -693,10 +728,6 @@ async function startBotWithRetry(maxRetries = 10, delayMs = 3000) {
       botStarted = true;
       console.log('✅ Бот успешно запущен!');
       console.log(`📱 Bot username: @${bot.botInfo?.username}`);
-
-      // Запуск cron-напоминаний после старта бота
-      cronService.start();
-      console.log('✅ Cron-напоминания запущены');
       return;
     } catch (err) {
       console.error(`❌ Попытка ${attempt} не удалась:`, err.message);

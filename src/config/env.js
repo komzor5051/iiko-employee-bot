@@ -53,5 +53,8 @@ module.exports = {
   port: parseInt(process.env.PORT || '3000'),
 
   // iiko Webhook
-  iikoWebhookToken: process.env.IIKO_WEBHOOK_TOKEN || 'your-secret-token'
+  iikoWebhookToken: process.env.IIKO_WEBHOOK_TOKEN || 'your-secret-token',
+
+  // Managers group for reports and escalations
+  managersGroupId: parseInt(process.env.MANAGERS_GROUP_ID || '-5237107467')
 };

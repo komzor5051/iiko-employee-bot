@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const config = require('../config/env');
 
 /**
  * Сервис автоматических напоминаний о сменах
@@ -12,7 +13,7 @@ class CronService {
   constructor(bot, sheetsService) {
     this.bot = bot;
     this.sheetsService = sheetsService;
-    this.managersGroupId = -5237107467; // ID группы руководителей
+    this.managersGroupId = config.managersGroupId;
   }
 
   /**
@@ -31,9 +32,7 @@ class CronService {
     cron.schedule('*/5 * * * *', () => this.sendHourlyReminders(), tz);
     console.log('⏰ Cron: проверка напоминаний каждые 5 минут');
 
-    // Ежедневный отчёт в группу руководителей в 22:30 NSK
-    cron.schedule('30 22 * * *', () => this.sendDailyReport(), tz);
-    console.log('⏰ Cron: ежедневный отчёт запланирован на 22:30 NSK');
+    // Ежедневный отчёт перенесён в index.js (top-level cron, как в ШРМ_ЗАКУПКИ и ШРМ_ПЕРЕМЕЩЕНИЯ)
 
     // Проверка проблем каждые 15 минут (эскалация)
     cron.schedule('*/15 * * * *', () => this.checkProblemsAndEscalate(), tz);
@@ -318,66 +317,6 @@ class CronService {
     }
   }
 
-  /**
-   * Отправить ежедневный отчёт в группу руководителей
-   */
-  async sendDailyReport() {
-    const now = new Date();
-    const today = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Novosibirsk' });
-    const timeNSK = now.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Novosibirsk', hour: '2-digit', minute: '2-digit' });
-    console.log(`📊 [DailyReport] Запуск в ${timeNSK} NSK, дата: "${today}", группа: ${this.managersGroupId}`);
-
-    let shifts;
-    try {
-      shifts = await this.sheetsService.getTodayShiftLogs();
-      console.log(`📊 [DailyReport] getTodayShiftLogs вернул ${shifts.length} смен`);
-    } catch (error) {
-      console.error(`❌ [DailyReport] Ошибка Google Sheets:`, error.message);
-      return;
-    }
-
-    try {
-      if (shifts.length === 0) {
-        // Логируем первые даты из таблицы для диагностики формата
-        try {
-          const allRows = await this.sheetsService.getSheetData('Shift Logs!A2:A20');
-          const sampleDates = allRows.map(r => r[0]).filter(Boolean).slice(-5);
-          console.log(`📊 [DailyReport] Смен 0. Формат today="${today}", последние даты в таблице: [${sampleDates.join(', ')}]`);
-        } catch (e) {
-          console.log(`📊 [DailyReport] Смен 0. Не удалось прочитать примеры дат: ${e.message}`);
-        }
-
-        const message = `📊 <b>Отчёт за ${today}</b>\n\nСегодня смен не было.`;
-        await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
-        console.log('✅ [DailyReport] Отправлен пустой отчёт');
-        return;
-      }
-
-      // Считаем итоги
-      const totalHours = shifts.reduce((sum, s) => sum + s.hours_worked, 0);
-      const totalPayment = shifts.reduce((sum, s) => sum + s.total_payment, 0);
-
-      // Формируем список сотрудников
-      const employeeLines = shifts.map(s =>
-        `• ${s.full_name}: ${s.start_time}–${s.end_time} (${s.hours_worked.toFixed(1)} ч) — ${s.total_payment.toLocaleString('ru-RU')} ₽`
-      ).join('\n');
-
-      const message =
-        `📊 <b>Отчёт за ${today}</b>\n\n` +
-        `👥 <b>Сотрудники:</b>\n${employeeLines}\n\n` +
-        `━━━━━━━━━━━━━━━\n` +
-        `⏱ <b>Всего часов:</b> ${totalHours.toFixed(1)} ч\n` +
-        `💰 <b>К выплате:</b> ${totalPayment.toLocaleString('ru-RU')} ₽`;
-
-      await this.bot.telegram.sendMessage(this.managersGroupId, message, { parse_mode: 'HTML' });
-      console.log(`✅ [DailyReport] Отправлен. Смен: ${shifts.length}, часов: ${totalHours.toFixed(1)}, сумма: ${totalPayment}₽`);
-    } catch (error) {
-      console.error(`❌ [DailyReport] Ошибка отправки в Telegram (группа ${this.managersGroupId}):`, error.message);
-      if (error.response) {
-        console.error(`❌ [DailyReport] Telegram API: ${error.response.error_code} — ${error.response.description}`);
-      }
-    }
-  }
 }
 
 module.exports = CronService;
