@@ -33,7 +33,7 @@ All bot logic (commands, callbacks, location handling) lives in `src/index.js`. 
 - `src/middleware/auth.js` — never imported (auth is inline in `index.js`)
 
 **Active service layer**:
-- `src/bot.js` — Telegraf instance with logger and error handler middleware
+- `src/bot.js` — Telegraf instance with logger, error handler, and **group-message filter** (bot ignores all non-private chats — middleware returns early if `ctx.chat.type !== 'private'`)
 - `src/services/googleSheetsService.js` — Google Sheets CRUD, employee lookup, shift logging, schedule queries
 - `src/services/iikoService.js` — iiko Cloud API with token management and retry logic
 - `src/services/locationService.js` — Haversine distance check against store coordinates
@@ -44,6 +44,18 @@ All bot logic (commands, callbacks, location handling) lives in `src/index.js`. 
 - `src/services/webhookHandler.js` — Processes iiko PersonalShift events into sheet logs + Telegram notifications
 - `src/config/env.js` — Environment variable validation and parsing (includes `managersGroupId`)
 
+### Bot Commands
+
+| Command | Access | Description |
+|---------|--------|-------------|
+| `/start` | All users | Registration (phone sharing) or main menu (if registered) |
+| `/status` | All users | Current shift status with duration and payment |
+| `/help` | All users | Help text |
+| `/report` | Admin only | Manually trigger daily report to managers group |
+| `/test_reminder` | Admin only | Send test reminder + show current schedule state (shifts starting/ending in 1h) |
+
+Callback actions: `open_shift`, `close_shift`, `shift_status`, `cancel_action`, `back_to_menu`
+
 ### Data Flow
 
 1. User sends `/start` → Bot checks `Сотрудники` sheet by Telegram ID
@@ -51,6 +63,7 @@ All bot logic (commands, callbacks, location handling) lives in `src/index.js`. 
 3. Shift open/close requires geolocation → `pendingLocationChecks` Map stores action + timestamp, 10min timeout
 4. On valid location → shift logged to `Shift Logs` sheet and optionally synced to iiko API
 5. Bot uses inline keyboards (`Markup.inlineKeyboard`) for main UI, reply keyboards only for contact/location requests
+6. Bot only works in private chats — group messages are silently ignored by middleware in `bot.js`
 
 ### iiko Cloud API Endpoints
 
@@ -113,6 +126,7 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 - **Telegraf.js v4**: `bot.command()`, `bot.action()`, `bot.on('contact')`, `bot.on('location')`, `Markup` for keyboards
 - **iiko token management**: 1h lifetime, auto-refresh 5min before expiry, retry on 401/429/503 with exponential backoff (max 3 retries)
 - **Phone normalization**: All phone comparisons use `normalizePhone()` in `googleSheetsService.js` which strips to 10 digits (removes country code 7/8). This is critical for matching — phones in sheets may be in any format.
+- **Name matching**: `findEmployeeByName()` first tries exact match, then falls back to substring inclusion (either direction). This is used for schedule→employee mapping where names in the schedule matrix may not exactly match the employees sheet
 - **Location validation**: `pendingLocationChecks` Map in `src/index.js` tracks open/close actions awaiting geolocation (10min timeout, cleaned up every 60s via setInterval)
 - **Managers group**: `MANAGERS_GROUP_ID` configured in `config/env.js` as `managersGroupId` (env var `MANAGERS_GROUP_ID`, default `-5237107467`). Used by `dailyReport.js`, `cronService.js`, and `testSystem.js`
 - **Startup order**: Webhook server starts first (for Railway health checks on `PORT`), then bot launches with retry logic (up to 10 attempts, handles 409 Conflict)
@@ -122,6 +136,7 @@ All cron jobs use `{ timezone: 'Asia/Novosibirsk' }` option in node-cron. Expres
 
 ### Gotchas
 
+- **Private-chat middleware vs group messages**: `bot.js` ignores non-private chats, but `dailyReport.js`, `cronService.js` escalation, and `testSystem.js` send messages to the managers group via `bot.telegram.sendMessage()` directly (bypasses middleware). This is intentional — the middleware only filters incoming user messages, not outgoing bot messages
 - `IIKO_WEBHOOK_TOKEN` in `env.js` defaults to `'your-secret-token'` — if env var is missing, webhook auth silently uses this default instead of failing
 - `TODO.md` is the original development plan, not current TODOs — the actual implementation diverged from the plan (monolith instead of modular handlers, different iiko endpoints)
 - Shift duration calculations assume same-day shifts; midnight crossover adds 24h but multi-day shifts are not supported

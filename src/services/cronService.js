@@ -294,8 +294,8 @@ class CronService {
         let durationMinutes = nowMinutes - startMinutes;
         if (durationMinutes < 0) durationMinutes += 24 * 60; // Переход через полночь
 
-        // Если смена длится больше 12 часов
-        if (durationMinutes > 12 * 60) {
+        // Если смена длится больше 13.5 часов
+        if (durationMinutes > 13.5 * 60) {
           problems.push({
             type: 'long_shift',
             employee: shift.full_name,
